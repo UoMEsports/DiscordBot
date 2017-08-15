@@ -82,7 +82,7 @@ class esbot(discord.Client):
                     response = ''
                     if committee_only:
                         response += 'This command is committee only. '
-                    response += 'Correct usage is `{}`'.format(usage)
+                    response += 'Correct usage is `{}{}`'.format(self.command_prefix, usage)
                     return await self.temp_respond(message, response)
                 # if committe only, check if the user has the committee role
                 if committee_only:
@@ -91,13 +91,13 @@ class esbot(discord.Client):
                         try:
                             return await func(self, *args, **kwargs)
                         except UsageException:
-                            return await self.temp_respond(message, 'Correct usage is `{}`'.format(usage))
+                            return await self.temp_respond(message, 'Correct usage is `{}{}`'.format(self.command_prefix, usage))
                     else:
                         return await self.temp_respond(message, 'You need to be a committee member to use this command.')
                 try:
                     return await func(self, *args, **kwargs)
                 except UsageException:
-                    return await self.temp_respond(message, 'Correct usage is `{}`'.format(usage))
+                    return await self.temp_respond(message, 'Correct usage is `{}{}`'.format(self.command_prefix, usage))
                 return await exec_func(self, func, usage, *args, **kwargs)
             return sub_wrapper
         return wrapper
@@ -215,7 +215,7 @@ class esbot(discord.Client):
         await self.send_terms(member)
         
     # list the bot commands
-    @command(usage='!help [command]')
+    @command(usage='help [command]')
     async def cmd_help(self, *args, **kwargs):
         # check if a command has been given to list the usage
         if len(args) == 1:
@@ -230,7 +230,7 @@ class esbot(discord.Client):
             await self.temp_respond(message, response)
 
     # restart the bot
-    @command(usage='!restart', committee_only=True)
+    @command(usage='restart', committee_only=True)
     async def cmd_restart(self, *args, **kwargs):
         message = kwargs.get('message')
         author = kwargs.get('author')
@@ -242,7 +242,7 @@ class esbot(discord.Client):
         exit()
 
     # add game role
-    @command(usage='!addrole [games]')
+    @command(usage='addrole [games]')
     async def cmd_addrole(self, *args, **kwargs):
         member = kwargs.get('member')
         message = kwargs.get('message')
@@ -262,7 +262,7 @@ class esbot(discord.Client):
             raise UsageException
 
     # remove game role
-    @command(usage='!removerole [games]')
+    @command(usage='removerole [games]')
     async def cmd_removerole(self, *args, **kwargs):
         member = kwargs.get('member')
         message = kwargs.get('message')
