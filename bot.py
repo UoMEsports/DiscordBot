@@ -81,7 +81,7 @@ class esbot(discord.Client):
                 message = kwargs.get('message')
                 # if ran as part of help command, return the usage
                 if details:
-                    response = 'Correct usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
+                    response = 'Usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
                     if committee_only:
                         response += 'This command is committee only.'
                     return response
