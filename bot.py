@@ -233,7 +233,7 @@ class esbot(discord.Client):
             responses = []
             for arg in args:
                 if arg.lower() in self.commands:
-                    cmd = getattr(self, arg.lower())
+                    cmd = getattr(self, arg.lower(), None)
                     responses.append(await cmd(*args, **kwargs, details=True))
                 else:
                     responses.append('Command `{}{}` not found.'.format(self.command_prefix, arg))
