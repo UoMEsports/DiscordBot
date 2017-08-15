@@ -98,7 +98,6 @@ class esbot(discord.Client):
                     return await func(self, *args, **kwargs)
                 except UsageException:
                     return await self.temp_respond(message, 'Correct usage is `{}{}`'.format(self.command_prefix, usage))
-                return await exec_func(self, func, usage, *args, **kwargs)
             return sub_wrapper
         return wrapper
 
