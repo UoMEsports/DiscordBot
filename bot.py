@@ -1,5 +1,5 @@
 '''
-EsportsBot v1.04.0
+EsportsBot
 Christian Moulsdale, 2017
 '''
 
@@ -7,10 +7,16 @@ import discord
 import asyncio
 
 from captcha.image import ImageCaptcha
+from functools import wraps
 from os import system
 from profanity import profanity
 from random import choice
 
+# incorrect usage exception
+class UsageException(Exception):
+    pass
+
+# the esbot class
 class esbot(discord.Client):
     # initialise the bot
     def __init__(self, command_prefix = '!'):
@@ -28,7 +34,7 @@ class esbot(discord.Client):
         response = await self.send_message(channel, str_response)
         await asyncio.sleep(lifetime)
         await self.delete_message(response)
-
+        
     # output to terminal if the bot successfully logs in
     async def on_ready(self):
         # output information about the bot's login
@@ -49,7 +55,14 @@ class esbot(discord.Client):
         self.committee_role = discord.utils.get(self.server.roles, id = '233643432843804674')
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name = 'nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name = 'teamscrub')
-
+        
+        # game roles
+        self.games = dict()
+        with open('games.txt', 'r') as f:
+            for line in f:
+                game = line.strip()
+                self.games[game.lower()] = discord.utils.get(self.server.roles, name=game)
+        
         # set the current game to 'Orisa because she's the best hero'
         await self.change_presence(game = discord.Game(name = 'Orisa because she\'s the best hero'))
 
@@ -58,15 +71,35 @@ class esbot(discord.Client):
             if self.member_role not in member.roles and member != self.user:
                 await self.send_terms(member)
 
-    # committee only wrapper
-    def committee_only(func):
-        async def wrapper(self, **kwargs):
-            message = kwargs.get('message')
-            print(message.content)
-            if self.committee_role in self.server.get_member(message.author.id).roles:
-                return await func(self, **kwargs)
-            else:
-                return await self.temp_respond(message, 'You need to be a committee member to use this command.')
+    # esborts command wrapper
+    def command(usage, committee_only=False):
+        def wrapper(func):
+            @wraps(func)
+            async def sub_wrapper(self, *args, details=False, **kwargs):
+                message = kwargs.get('message')
+                # if ran as part of help command, return the usage
+                if details:
+                    response = ''
+                    if committee_only:
+                        response += 'This command is committee only. '
+                    response += 'Correct usage is `{}`'.format(usage)
+                    return await self.temp_respond(message, response)
+                # if committe only, check if the user has the committee role
+                if committee_only:
+                    member = kwargs.get('member')
+                    if self.committee_role in member.roles:
+                        try:
+                            return await func(self, *args, **kwargs)
+                        except UsageException:
+                            return await self.temp_respond(message, 'Correct usage is `{}`'.format(usage))
+                    else:
+                        return await self.temp_respond(message, 'You need to be a committee member to use this command.')
+                try:
+                    return await func(self, *args, **kwargs)
+                except UsageException:
+                    return await self.temp_respond(message, 'Correct usage is `{}`'.format(usage))
+                return await exec_func(self, func, usage, *args, **kwargs)
+            return sub_wrapper
         return wrapper
 
     # generate a captcha
@@ -98,6 +131,7 @@ class esbot(discord.Client):
 
     #check the contents of the message
     async def on_message(self, message):
+        # get the message content in a managable format
         message_content = message.content.strip()
         message_content_lower = message_content.lower()
 
@@ -115,16 +149,17 @@ class esbot(discord.Client):
 
     # check for a command
     async def process_commands(self, message, message_content, message_content_lower):
-        if message_content_lower.startswith(self.command_prefix) and message.author.id != self.user.id and not message.channel.is_private:
+        if message_content_lower.startswith(self.command_prefix) and message.author != self.user and not message.channel.is_private:
             command, *args = message_content.split()
             command = command.replace(self.command_prefix, '', 1).lower()
             if command in self.commands:
                 kwargs = dict()
-                kwargs['args'] = args
                 kwargs['message'] = message
+                kwargs['author'] = message.author
+                kwargs['member'] = self.server.get_member(message.author.id)
                 
                 cmd = getattr(self, 'cmd_{}'.format(command), None)
-                await cmd(**kwargs)
+                await cmd(*args, **kwargs)
             else:
                 await self.temp_respond(message, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands.'.format(self.command_prefix, command))
         
@@ -180,23 +215,74 @@ class esbot(discord.Client):
         await self.send_terms(member)
         
     # list the bot commands
-    async def cmd_help(self, **kwargs):
-        message = kwargs.get('message')
-        response = '**EsportsBot commands**\n```!'
-        response += ', !'.join(self.commands)
-        response += '```'
-        await self.temp_respond(message, response)
+    @command(usage='!help [command]')
+    async def cmd_help(self, *args, **kwargs):
+        # check if a command has been given to list the usage
+        if len(args) == 1:
+            if args[0] in self.commands:
+                cmd = getattr(self, 'cmd_{}'.format(args[0]))
+                await cmd(*args, **kwargs, details=True)
+        else:
+            message = kwargs.get('message')
+            response = '**EsportsBot commands**\n```!'
+            response += ', !'.join(self.commands)
+            response += '```'
+            await self.temp_respond(message, response)
 
     # restart the bot
-    @committee_only
-    async def cmd_restart(self, **kwargs):
+    @command(usage='!restart', committee_only=True)
+    async def cmd_restart(self, *args, **kwargs):
         message = kwargs.get('message')
-        await self.send_message(message.author, 'Restarting.')
+        author = kwargs.get('author')
+        await self.send_message(author, 'Restarting.')
         await self.delete_message(message)
         print('Restarting the bot.')
         print('------')
         system('python3 bot.py')
         exit()
+
+    # add game role
+    @command(usage='!addrole [games]')
+    async def cmd_addrole(self, *args, **kwargs):
+        member = kwargs.get('member')
+        message = kwargs.get('message')
+        if len(args) != 0:
+            response = ''
+            roles = []
+            for arg in args:
+                if arg.lower() in self.games:
+                    role = self.games[arg.lower()]
+                    roles.append(role)
+                    response += 'Added `{}` role\n'.format(role.name)
+                else:
+                    response += 'Didn\'t recognise `{}` role \n'.format(arg)
+            await self.add_roles(member, *roles)
+            await self.temp_respond(message, response)
+        else:
+            raise UsageException
+
+    # remove game role
+    @command(usage='!removerole [games]')
+    async def cmd_removerole(self, *args, **kwargs):
+        member = kwargs.get('member')
+        message = kwargs.get('message')
+        if len(args) != 0:
+            response = ''
+            roles = []
+            for arg in args:
+                if arg.lower() in self.games:
+                    role = self.games[arg.lower()]
+                    if role in member.roles:
+                        roles.append(role)
+                        response += 'Removed `{}` role\n'.format(role.name)
+                    else:
+                        response += 'You don\'t have `{}` role\n'.format(role.name)
+                else:
+                    response += 'Didn\'t recognise `{}` role \n'.format(arg)
+            await self.remove_roles(member, *roles)
+            await self.temp_respond(message, response)
+        else:
+            raise UsageException
             
 # start the bot
 bot = esbot()
