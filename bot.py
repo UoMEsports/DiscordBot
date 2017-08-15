@@ -131,6 +131,9 @@ class esbot(discord.Client):
 
     #check the contents of the message
     async def on_message(self, message):
+        # wait until the bot is ready to process messages
+        await self.wait_until_ready()
+        
         # get the message content in a managable format
         message_content = message.content.strip()
         message_content_lower = message_content.lower()
