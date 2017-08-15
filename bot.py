@@ -288,7 +288,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('You don\'t have `{}` role'.format(role.name))
                 else:
-                    responses.append('Didn\'t recognise `{}` role'.format(arg))
+                    responses.append('Didn\'t recognise `{}` role'.format(arg.lower()))
             await self.remove_roles(member, *roles)
             await self.temp_respond(message, '\n'.join(responses))
         else:
