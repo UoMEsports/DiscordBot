@@ -328,6 +328,7 @@ class esbot(discord.Client):
                         responses.append('Removed `{}` role'.format(role.name))
                 await self.remove_roles(member, *roles)
                 await self.temp_respond(message, '\n'.join(responses))
+            else:
                 responses = []
                 roles = []
                 for arg in args:
