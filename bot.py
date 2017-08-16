@@ -11,6 +11,8 @@ from os import system
 from profanity import profanity
 from random import choice
 
+zero_seperator = '​'
+
 # incorrect usage exception
 class UsageException(Exception):
     pass
@@ -55,13 +57,6 @@ class esbot(discord.Client):
         self.committee_role = discord.utils.get(self.server.roles, id = '233643432843804674')
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name = 'nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name = 'teamscrub')
-        
-        # game roles
-        self.games = dict()
-        with open('games.txt', 'r') as f:
-            for line in f:
-                game = line.strip()
-                self.games[game.lower()] = discord.utils.get(self.server.roles, name=game)
 
         # get the list of non-member ids
         self.non_member_ids = []
@@ -248,21 +243,29 @@ class esbot(discord.Client):
         member = kwargs.get('member')
         message = kwargs.get('message')
         if len(args) != 0:
+            games = dict()
+            for role in self.server.roles:
+                if role.name.startswith(zero_seperator):
+                    games[role.name.replace(zero_seperator, '').lower()] = role
             if args[0].lower() == 'list':
                 response = 'The possible game roles are: '
-                game_roles = []
-                for game in self.games:
-                    game_roles.append('`{}`'.format(self.games[game].name))
-                response += ', '.join(game_roles)
+                items = []
+                for game in games:
+                    items.append('`{}`'.format(games[game].name))
+                response += ', '.join(items)
                 await self.temp_respond(message, response)
             else:
                 responses = []
                 roles = []
                 for arg in args:
-                    if arg.lower() in self.games:
-                        role = self.games[arg.lower()]
-                        roles.append(role)
-                        responses.append('Added `{}` role'.format(role.name))
+                    game = arg.lower()
+                    if game in games:
+                        role = games[game]
+                        if role in member.roles:
+                            responses.append('You already have `{}` role'.format(role.name))
+                        else:
+                            roles.append(games[game])
+                            responses.append('Added `{}` role'.format(role.name))
                     else:
                         responses.append('Didn\'t recognise `{}` role '.format(arg))
                 await self.add_roles(member, *roles)
@@ -276,41 +279,49 @@ class esbot(discord.Client):
         member = kwargs.get('member')
         message = kwargs.get('message')
         if len(args) != 0:
+            games = dict()
+            for role in self.server.roles:
+                if role.name.startswith(zero_seperator):
+                    games[role.name.replace(zero_seperator, '').lower()] = role
             if args[0].lower() == 'list':
                 response = 'Your current game roles are: '
-                game_roles = []
-                for game in self.games:
-                    role = self.games[game]
+                items = []
+                for game in games:
+                    role = games[game]
                     if role in member.roles:
-                        game_roles.append('`{}`'.format(role))
-                if len(game_roles) == 0:
+                        items.append('`{}`'.format(role.name))
+                if len(items) == 0:
                     await self.temp_respond(message, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
                 else:
-                    response += ', '.join(game_roles)
+                    response += ', '.join(items)
                     await self.temp_respond(message, response)
             elif args[0].lower() == 'all':
                 responses = []
                 roles = []
-                for game in self.games:
-                    role = self.games[game]
+                for game in games:
+                    role = games[game]
                     if role in member.roles:
                         roles.append(role)
                         responses.append('Removed `{}` role'.format(role.name))
-                await self.remove_roles(member, *roles)
-                await self.temp_respond(message, '\n'.join(responses))
+                if len(responses) != 0:
+                    await self.remove_roles(member, *roles)
+                    await self.temp_respond(message, '\n'.join(responses))
+                else:
+                    await self.temp_respond(message, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
             else:
                 responses = []
                 roles = []
                 for arg in args:
-                    if arg.lower() in self.games:
-                        role = self.games[arg.lower()]
+                    game = arg.lower()
+                    if game in games:
+                        role = games[game]
                         if role in member.roles:
                             roles.append(role)
                             responses.append('Removed `{}` role'.format(role.name))
                         else:
                             responses.append('You don\'t have `{}` role'.format(role.name))
                     else:
-                        responses.append('Didn\'t recognise `{}` role'.format(arg.lower()))
+                        responses.append('Didn\'t recognise `{}` role'.format(game))
                 await self.remove_roles(member, *roles)
                 await self.temp_respond(message, '\n'.join(responses))
         else:
