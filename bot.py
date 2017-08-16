@@ -273,45 +273,75 @@ class esbot(discord.Client):
         exit()
 
     # add game role
-    @command(usage='game(s)')
+    @command(usage='game(s) | list')
     async def addrole(self, *args, **kwargs):
         member = kwargs.get('member')
         message = kwargs.get('message')
         if len(args) != 0:
-            responses = []
-            roles = []
-            for arg in args:
-                if arg.lower() in self.games:
-                    role = self.games[arg.lower()]
-                    roles.append(role)
-                    responses.append('Added `{}` role'.format(role.name))
-                else:
-                    responses.append('Didn\'t recognise `{}` role '.format(arg))
-            await self.add_roles(member, *roles)
-            await self.temp_respond(message, '\n'.join(responses))
+            if args[0].lower() == 'list':
+                response = 'The possible game roles are: '
+                game_roles = []
+                for game in games:
+                    game_roles.append('`{}`'.format(games[game].name))
+                response += ', '.join(game_roles)
+                await self.temp_respond(message, response)
+            else:
+                responses = []
+                roles = []
+                for arg in args:
+                    if arg.lower() in self.games:
+                        role = self.games[arg.lower()]
+                        roles.append(role)
+                        responses.append('Added `{}` role'.format(role.name))
+                    else:
+                        responses.append('Didn\'t recognise `{}` role '.format(arg))
+                await self.add_roles(member, *roles)
+                await self.temp_respond(message, '\n'.join(responses))
         else:
             raise UsageException
 
     # remove game role
-    @command(usage='game(s)')
+    @command(usage='game(s) | list | all')
     async def removerole(self, *args, **kwargs):
         member = kwargs.get('member')
         message = kwargs.get('message')
         if len(args) != 0:
-            responses = []
-            roles = []
-            for arg in args:
-                if arg.lower() in self.games:
-                    role = self.games[arg.lower()]
+            if args[0].lower() == 'list':
+                response = 'Your current game roles are: '
+                game_roles = []
+                for game in self.games:
+                    role = self.games[game]
+                    if role in member.roles:
+                        game_roles.append('`{}`'.format(role))
+                if len(game_roles) == 0:
+                    await self.temp_respond(message, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
+                else:
+                    response += ', '.join(game_roles)
+                    await self.temp_respond(message, response)
+            elif args[0].lower() == 'all':
+                responses = []
+                roles = []
+                for game in self.games:
+                    role = self.games[game]
                     if role in member.roles:
                         roles.append(role)
                         responses.append('Removed `{}` role'.format(role.name))
+                await self.remove_roles(member, *roles)
+                await self.temp_respond(message, '\n'.join(responses))
+                responses = []
+                roles = []
+                for arg in args:
+                    if arg.lower() in self.games:
+                        role = self.games[arg.lower()]
+                        if role in member.roles:
+                            roles.append(role)
+                            responses.append('Removed `{}` role'.format(role.name))
+                        else:
+                            responses.append('You don\'t have `{}` role'.format(role.name))
                     else:
-                        responses.append('You don\'t have `{}` role'.format(role.name))
-                else:
-                    responses.append('Didn\'t recognise `{}` role'.format(arg.lower()))
-            await self.remove_roles(member, *roles)
-            await self.temp_respond(message, '\n'.join(responses))
+                        responses.append('Didn\'t recognise `{}` role'.format(arg.lower()))
+                await self.remove_roles(member, *roles)
+                await self.temp_respond(message, '\n'.join(responses))
         else:
             raise UsageException
             
