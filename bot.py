@@ -63,14 +63,29 @@ class esbot(discord.Client):
             for line in f:
                 game = line.strip()
                 self.games[game.lower()] = discord.utils.get(self.server.roles, name=game)
+
+        # get the list of non-member ids
+        self.non_member_ids = []
+        with open('nonmemberids.txt', 'r') as f:
+            for line in f:
+                member = discord.utils.get(self.server.members, id=line.strip())
+                if member != None:
+                    if self.member_role not in member.roles:
+                        self.non_member_ids.append(member.id)
+        self.update_non_member_ids()
         
         # set the current game to 'Orisa because she's the best hero'
         await self.change_presence(game = discord.Game(name = 'Orisa because she\'s the best hero'))
 
         # send prompts to all members who don't currently have the member role
         for member in self.server.members:
-            if self.member_role not in member.roles and member != self.user:
+            if self.member_role not in member.roles and member != self.user and member.id not in self.non_member_ids:
                 await self.send_terms(member)
+
+    def update_non_member_ids(self):
+        with open('nonmemberids.txt', 'w') as f:
+            for member_id in self.non_member_ids:
+                f.write('{}\n'.format(member_id))
 
     # esborts command wrapper
     def command(usage='', committee_only=False):
@@ -176,21 +191,25 @@ class esbot(discord.Client):
             elif message_content_lower.startswith('no'):
                 no = True
             # check if they have the member role
-            if self.member_role not in self.server.get_member(message.author.id).roles:
-                # check their response if they don't have the member role
-                if yes:
-                    # user has accepted the terms and conditions
-                    # do a captcha
-                    if await self.captcha(message.author):
-                        await self.send_message(message.author, 'Welcome to the University of Manchester Esports Society discord server!')
-                        await self.add_roles(self.server.get_member(message.author.id), self.member_role)
-                elif no:
-                    # user has rejected the terms and conditions
-                    yn = True
-                    await self.send_message(message.author, 'Bye!')
-                    await self.kick(self.server.get_member(message.author.id))
-            elif yes or no:
-                await self.send_message(message.author, 'You\'re already a member, dummy!')
+            member = discord.utils.get(self.server.members, id=message.author.id)
+            if member != None:
+                if member.id not in self.non_member_ids:
+                    if self.member_role not in member.roles:
+                        # check their response if they don't have the member role
+                        if yes:
+                            # user has accepted the terms and conditions
+                            # do a captcha
+                            if await self.captcha(message.author):
+                                await self.send_message(message.author, 'Member role has been added')
+                                await self.add_roles(member, self.member_role)
+                        elif no:
+                            # user has rejected the terms and conditions
+                            await self.send_message(message.author, 'OK, I\'ll stop asking.')
+                            self.non_member_ids.append(member.id)
+                            with open('nonmemberids.txt', 'a') as f:
+                                f.write('{}\n'.format(member.id))
+                    elif yes or no:
+                        await self.send_message(message.author, 'You\'re already a member, dummy!')
 
     # process the meme responses
     async def meme_response(self, message, message_content_lower):
@@ -211,11 +230,13 @@ class esbot(discord.Client):
 
     # send the terms and conditions prompts to a member
     async def send_terms(self, member):
-        await self.send_message(member, content = 'Are you a member of the University of Manchester Esports Society? (`yes` or `no`)')
+        await self.send_message(member, 'Are you a member of the University of Manchester Esports Society? (`yes` or `no`) You can be in this server without being a member.')
 
     # when a member joins, send them a PM asking if they accept the terms and conditions
     async def on_member_join(self, member):
-        await self.send_terms(member)
+        await self.send_message(member, 'Welcome to the University of Manchester Esports Society discord server!')
+        if member.id not in self.non_member_ids:
+            await self.send_terms(member)
 
     # BOT COMMANDS
     
