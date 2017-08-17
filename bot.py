@@ -9,7 +9,6 @@ import asyncio
 from functools import wraps
 from os import system
 from profanity import profanity
-from random import choice
 
 zero_seperator = '​'
 
