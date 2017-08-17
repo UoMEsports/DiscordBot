@@ -59,7 +59,7 @@ class esbot(discord.Client):
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name = 'teamscrub')
         
         # set the current game to 'Orisa because she's the best hero'
-        await self.change_presence(game = discord.Game(type = 0, name = 'Orisa because she\'s the best hero'))
+        await self.change_presence(game = discord.Game(type=0, name = 'Orisa because she\'s the best hero'))
 
         # send prompts to all members who don't currently have the member role
         for member in self.server.members:
@@ -100,68 +100,68 @@ class esbot(discord.Client):
     async def on_message(self, message):
         # wait until the bot is ready to process messages
         await self.wait_until_ready()
-        
-        # get the message content in a managable format
-        message_content = message.content.strip()
-        message_content_lower = message_content.lower()
 
-        # process the various responses as tasks to avoid async blocking
-        task_process = asyncio.ensure_future(self.process_commands(message, message_content, message_content_lower))
-        task_accept = asyncio.ensure_future(self.accept_terms(message, message_content_lower))
-        task_meme = asyncio.ensure_future(self.meme_response(message, message_content_lower))
-        task_christian = asyncio.ensure_future(self.christian_server(message, message_content))
-
-        # finish the tasks
-        await task_process
-        await task_accept
-        await task_meme
-        await task_christian
-
-    # check for a command
-    async def process_commands(self, message, message_content, message_content_lower):
-        if message_content_lower.startswith(self.command_prefix) and message.author != self.user and not message.channel.is_private:
-            command, *args = message_content.split()
-            command = command.replace(self.command_prefix, '', 1).lower()
-            if command in self.commands:
-                kwargs = dict()
-                kwargs['message'] = message
-                kwargs['author'] = message.author
-                kwargs['member'] = self.server.get_member(message.author.id)
-                
-                cmd = getattr(self, command, None)
-                await cmd(*args, **kwargs)
+        # process responses if message isn't from user:
+        if message.author != self.user:
+            # get the message content in a managable format
+            message_content = message.content.strip()
+            message_content_lower = message_content.lower()
+            
+            if message.channel.is_private:
+                member = self.server.get_member(message.author.id)
+                if self.member_role not in member.roles and self.guest_role not in member.roles:
+                    await self.accept_terms(member, message_content_lower)
             else:
-                await self.temp_respond(message, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands.'.format(self.command_prefix, command))
+                # process the various responses as tasks to avoid async blocking
+                tasks = []
+                if message_content_lower.startswith(self.command_prefix):
+                    tasks.append(asyncio.ensure_future(self.process_commands(message, message_content)))
+                tasks.append(asyncio.ensure_future(self.meme_response(message, message_content_lower)))
+                if profanity.contains_profanity(message_content):
+                    tasks.append(asyncio.ensure_future(self.christian_server(message, message_content)))
+                for task in tasks:
+                    await task
         
     # check if message is a PM - terms and conditions
-    async def accept_terms(self, message, message_content_lower):
-        member = self.server.get_member(message.author.id)
-        if self.member_role not in member.roles and self.guest_role not in member.roles and message.channel.is_private and message.author != self.user:
-            if message_content_lower.startswith('yes'):
-                # user is a member
-                await self.send_message(message.author, 'Member role has been added')
-                return await self.add_roles(member, self.member_role)
-            elif message_content_lower.startswith('no'):
-                # user is a guest
-                await self.send_message(message.author, 'Guest role has been added')
-                return await self.add_roles(member, self.guest_role)
+    async def accept_terms(self, member, message_content_lower):
+        if message_content_lower.startswith('yes'):
+            # user is a member
+            await self.send_message(member, 'Member role has been added')
+            return await self.add_roles(member, self.member_role)
+        elif message_content_lower.startswith('no'):
+            # user is a guest
+            await self.send_message(member, 'Guest role has been added')
+            return await self.add_roles(member, self.guest_role)
+        
+    # check for a command
+    async def process_commands(self, message, message_content):
+        command, *args = message_content.split()
+        command = command.replace(self.command_prefix, '', 1).lower()
+        if command in self.commands:
+            kwargs = dict()
+            kwargs['message'] = message
+            kwargs['author'] = message.author
+            kwargs['member'] = self.server.get_member(message.author.id)
+            
+            cmd = getattr(self, command, None)
+            await cmd(*args, **kwargs)
+        else:
+            await self.temp_respond(message, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands.'.format(self.command_prefix, command))
 
     # process the meme responses
     async def meme_response(self, message, message_content_lower):
-        if not message.channel.is_private and message.author != self.user:
-            if 'behave' in message_content_lower:
-                await self.temp_say(message.channel, 'No, you.')
-            if 'merci' in message_content_lower:
-                await self.add_reaction(message, self.no_merci_emoji)
-            if 'scrub' in message_content_lower:
-                await self.add_reaction(message, self.team_scrub_emoji)
+        if 'merci' in message_content_lower:
+            await self.add_reaction(message, self.no_merci_emoji)
+        if 'scrub' in message_content_lower:
+            await self.add_reaction(message, self.team_scrub_emoji)
+        if 'behave' in message_content_lower:
+            await self.temp_say(message.channel, 'No, you.')
 
     # this is a christian server
     async def christian_server(self, message, message_content):
-        if profanity.contains_profanity(message_content) and message.author != self.user and not message.channel.is_private:
-            response = await self.send_file(message.channel, fp = 'christianserverorisa.png', content = profanity.censor(message.content))
-            await asyncio.sleep(30)
-            await self.delete_message(response)
+        response = await self.send_file(message.channel, fp = 'christianserverorisa.png', content = profanity.censor(message.content))
+        await asyncio.sleep(30)
+        await self.delete_message(response)
 
     # send the terms and conditions prompts to a member
     async def send_terms(self, member):
