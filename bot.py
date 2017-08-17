@@ -59,7 +59,7 @@ class esbot(discord.Client):
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name = 'teamscrub')
         
         # set the current game to 'Orisa because she's the best hero'
-        await self.change_presence(game = discord.Game(name = 'Orisa because she\'s the best hero'))
+        await self.change_presence(game = discord.Game(type = 0, name = 'Orisa because she\'s the best hero'))
 
         # send prompts to all members who don't currently have the member role
         for member in self.server.members:
@@ -310,6 +310,17 @@ class esbot(discord.Client):
                 await self.temp_respond(message, 'Created `{}` game role'.format(args[0]))
             else:
                 await self.temp_respond(message, '`{}` game role already exists'.format(games[args[0].lower()].name))
+        else:
+            raise UsageException
+
+    # change Orisa's presence (game played)
+    @command(usage='presence', committee_only=True)
+    async def changepresence(self, *args, **kwargs):
+        message = kwargs.get('message')
+        if len(args) != 0:
+            presence = ' '.join(args)
+            await self.change_presence(game=discord.Game(type=0, name=presence))
+            await self.temp_respond(message, 'Changed presence to `{}`.'.format(presence))
         else:
             raise UsageException
         
