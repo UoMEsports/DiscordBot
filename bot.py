@@ -54,32 +54,18 @@ class esbot(discord.Client):
         # initialise the server variables as global variables
         self.server = discord.utils.get(self.servers, id = '230727209202089984')
         self.member_role = discord.utils.get(self.server.roles, id = '233644097007517697')
+        self.guest_role = discord.utils.get(self.server.roles, id = '347731764606795776')
         self.committee_role = discord.utils.get(self.server.roles, id = '233643432843804674')
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name = 'nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name = 'teamscrub')
-
-        # get the list of non-member ids
-        self.non_member_ids = []
-        with open('nonmemberids.txt', 'r') as f:
-            for line in f:
-                member = discord.utils.get(self.server.members, id=line.strip())
-                if member != None:
-                    if self.member_role not in member.roles:
-                        self.non_member_ids.append(member.id)
-        self.update_non_member_ids()
         
         # set the current game to 'Orisa because she's the best hero'
         await self.change_presence(game = discord.Game(name = 'Orisa because she\'s the best hero'))
 
         # send prompts to all members who don't currently have the member role
         for member in self.server.members:
-            if self.member_role not in member.roles and member != self.user and member.id not in self.non_member_ids:
+            if self.member_role not in member.roles and self.guest_role not in member.roles and member != self.user:
                 await self.send_terms(member)
-
-    def update_non_member_ids(self):
-        with open('nonmemberids.txt', 'w') as f:
-            for member_id in self.non_member_ids:
-                f.write('{}\n'.format(member_id))
 
     # esborts command wrapper
     def command(usage='', committee_only=False):
@@ -101,7 +87,7 @@ class esbot(discord.Client):
                         try:
                             return await func(self, *args, **kwargs)
                         except UsageException:
-                            return await self.temp_respond(message, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
+                            return await self.temp_respond(message, 'Correct usage is `{}{} {}`. This command is committee only.'.format(self.command_prefix, func.__name__, usage))
                     else:
                         return await self.temp_respond(message, 'You need to be a committee member to use this command.')
                 try:
@@ -150,31 +136,16 @@ class esbot(discord.Client):
         
     # check if message is a PM - terms and conditions
     async def accept_terms(self, message, message_content_lower):
-        if message.channel.is_private and message.author != self.user:
-            yes = False
-            no = False
+        member = self.server.get_member(message.author.id)
+        if self.member_role not in member.roles and self.guest_role not in member.roles and message.channel.is_private and message.author != self.user:
             if message_content_lower.startswith('yes'):
-                yes = True
+                # user is a member
+                await self.send_message(message.author, 'Member role has been added')
+                return await self.add_roles(member, self.member_role)
             elif message_content_lower.startswith('no'):
-                no = True
-            # check if they have the member role
-            member = discord.utils.get(self.server.members, id=message.author.id)
-            if member != None:
-                if member.id not in self.non_member_ids:
-                    if self.member_role not in member.roles:
-                        # check their response if they don't have the member role
-                        if yes:
-                            # user has accepted the terms and conditions
-                            await self.send_message(message.author, 'Member role has been added')
-                            await self.add_roles(member, self.member_role)
-                        elif no:
-                            # user has rejected the terms and conditions
-                            await self.send_message(message.author, 'OK, I\'ll stop asking.')
-                            self.non_member_ids.append(member.id)
-                            with open('nonmemberids.txt', 'a') as f:
-                                f.write('{}\n'.format(member.id))
-                    elif yes or no:
-                        await self.send_message(message.author, 'You\'re already a member, dummy!')
+                # user is a guest
+                await self.send_message(message.author, 'Guest role has been added')
+                return await self.add_roles(member, self.guest_role)
 
     # process the meme responses
     async def meme_response(self, message, message_content_lower):
@@ -188,20 +159,19 @@ class esbot(discord.Client):
 
     # this is a christian server
     async def christian_server(self, message, message_content):
-        if profanity.contains_profanity(message_content) and message.author != self.user:
+        if profanity.contains_profanity(message_content) and message.author != self.user and not message.channel.is_private:
             response = await self.send_file(message.channel, fp = 'christianserverorisa.png', content = profanity.censor(message.content))
             await asyncio.sleep(30)
             await self.delete_message(response)
 
     # send the terms and conditions prompts to a member
     async def send_terms(self, member):
-        await self.send_message(member, 'Are you a member of the University of Manchester Esports Society? (`yes` or `no`) You can be in this server without being a member.')
+        await self.send_message(member, 'Are you a member of the University of Manchester Esports Society? (`yes` or `no`) You can be in this server without being a member as a guest.')
 
     # when a member joins, send them a PM asking if they accept the terms and conditions
     async def on_member_join(self, member):
         await self.send_message(member, 'Welcome to the University of Manchester Esports Society discord server!')
-        if member.id not in self.non_member_ids:
-            await self.send_terms(member)
+        await self.send_terms(member)
 
     # BOT COMMANDS
     
@@ -326,7 +296,24 @@ class esbot(discord.Client):
                 await self.temp_respond(message, '\n'.join(responses))
         else:
             raise UsageException
-            
+
+    # create new game role
+    @command(usage='game', committee_only=True)
+    async def addgame(self, *args, **kwargs):
+        message = kwargs.get('message')
+        if len(args) == 1:
+            games = dict()
+            for role in self.server.roles:
+                if role.name.startswith(zero_seperator):
+                    games[role.name.replace(zero_seperator, '').lower()] = role
+            if args[0].lower() not in games:
+                await self.create_role(self.server, name='{}{}'.format(zero_seperator, args[0]), mentionable=True, permissions=self.server.default_role.permissions)
+                await self.temp_respond(message, 'Created `{}` game role'.format(args[0]))
+            else:
+                await self.temp_respond(message, '`{}` game role already exists'.format(games[args[0].lower()].name))
+        else:
+            raise UsageException
+        
 # start the bot
 bot = esbot()
 bot.run('token')
