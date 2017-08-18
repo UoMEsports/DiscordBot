@@ -52,7 +52,7 @@ class esbot(discord.Client):
                 self.commands.append(att)
                 if not hasattr(attr, 'is_committee_only'):
                     self.non_committee_commands.append(att)
-        
+
         # initialise the server variables as global variables
         self.server = discord.utils.get(self.servers, id = '230727209202089984')
         self.member_role = discord.utils.get(self.server.roles, id = '233644097007517697')
@@ -78,6 +78,7 @@ class esbot(discord.Client):
             @wraps(func)
             async def sub_wrapper(self, *args, details=False, **kwargs):
                 message = kwargs.get('message')
+                member = kwargs.get('member')
                 # if ran as part of help command, return the usage
                 if details:
                     response = ''
@@ -90,7 +91,6 @@ class esbot(discord.Client):
                     return response
                 # if committe only, check if the user has the committee role
                 if committee_only:
-                    member = kwargs.get('member')
                     if self.committee_role in member.roles:
                         try:
                             return await func(self, *args, **kwargs)
