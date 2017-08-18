@@ -311,7 +311,7 @@ class esbot(discord.Client):
 
     # create new game role
     @command(usage='game', committee_only=True)
-    async def addgame(self, *args, **kwargs):
+    async def createrole(self, *args, **kwargs):
         message = kwargs.get('message')
         if len(args) == 1:
             games = dict()
