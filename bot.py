@@ -43,12 +43,15 @@ class esbot(discord.Client):
         print(self.user.id)
         print('------')
 
-        # get the list of commands
+        # get the list of commands and committee-only-commands
         self.commands = []
+        self.non_committee_commands = []
         for att in dir(self):
             attr = getattr(self, att, None)
             if hasattr(attr, 'is_command'):
                 self.commands.append(att)
+                if not hasattr(attr, 'is_committee_only'):
+                    self.non_committee_commands.append(att)
         
         # initialise the server variables as global variables
         self.server = discord.utils.get(self.servers, id = '230727209202089984')
@@ -70,14 +73,20 @@ class esbot(discord.Client):
     def command(usage='', committee_only=False):
         def wrapper(func):
             func.is_command = True
+            if committee_only:
+                func.is_committee_only = True
             @wraps(func)
             async def sub_wrapper(self, *args, details=False, **kwargs):
                 message = kwargs.get('message')
                 # if ran as part of help command, return the usage
                 if details:
-                    response = 'Usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
+                    response = ''
                     if committee_only:
-                        response += 'This command is committee only.'
+                        if self.committee_role in member.roles:
+                            response += 'Usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
+                        response += 'This command is committee only'
+                    else:
+                        response += 'Usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
                     return response
                 # if committe only, check if the user has the committee role
                 if committee_only:
@@ -177,11 +186,15 @@ class esbot(discord.Client):
     # list the bot commands
     @command(usage='[command(s)]')
     async def help(self, *args, **kwargs):
+        member = kwargs.get('member')
         message = kwargs.get('message')
         # check if a command has been given to list the usage
         if len(args) == 0:
             response = '**EsportsBot commands**\n```!'
-            response += ', !'.join(self.commands)
+            if self.committee_role in member.roles:
+                response += ', !'.join(self.commands)
+            else:
+                response += ', !'.join(self.non_committee_commands)
             response += '```'
             await self.temp_respond(message, response)
         else:
