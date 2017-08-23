@@ -77,7 +77,7 @@ class esbot(discord.Client):
                 func.is_committee_only = True
             @wraps(func)
             async def sub_wrapper(self, *args, details=False, **kwargs):
-                message = kwargs.get('message')
+                message = kwargs['message']
                 # if ran as part of help command, return the usage
                 if details:
                     response = ''
@@ -90,7 +90,7 @@ class esbot(discord.Client):
                     return response
                 # if committe only, check if the user has the committee role
                 if committee_only:
-                    member = kwargs.get('member')
+                    member = kwargs['member']
                     if self.committee_role in member.roles:
                         try:
                             return await func(self, *args, **kwargs)
@@ -186,8 +186,8 @@ class esbot(discord.Client):
     # list the bot commands
     @command(usage='[command(s)]')
     async def help(self, *args, **kwargs):
-        member = kwargs.get('member')
-        message = kwargs.get('message')
+        member = kwargs['member']
+        message = kwargs['message']
         # check if a command has been given to list the usage
         if len(args) == 0:
             response = '**EsportsBot commands**\n```!'
@@ -210,8 +210,8 @@ class esbot(discord.Client):
     # restart the bot
     @command(committee_only=True)
     async def restart(self, *args, **kwargs):
-        message = kwargs.get('message')
-        author = kwargs.get('author')
+        message = kwargs['message']
+        author = kwargs['author']
         await self.send_message(author, 'Restarting.')
         await self.delete_message(message)
         print('Restarting the bot.')
@@ -222,8 +222,8 @@ class esbot(discord.Client):
     # add game role
     @command(usage='game(s) | list')
     async def addrole(self, *args, **kwargs):
-        member = kwargs.get('member')
-        message = kwargs.get('message')
+        member = kwargs['member']
+        message = kwargs['message']
         if len(args) != 0:
             games = dict()
             for role in self.server.roles:
@@ -259,8 +259,8 @@ class esbot(discord.Client):
     # remove game role
     @command(usage='game(s) | list | all')
     async def removerole(self, *args, **kwargs):
-        member = kwargs.get('member')
-        message = kwargs.get('message')
+        member = kwargs['member']
+        message = kwargs['message']
         if len(args) != 0:
             games = dict()
             for role in self.server.roles:
@@ -314,7 +314,7 @@ class esbot(discord.Client):
     # create new game role
     @command(usage='game', committee_only=True)
     async def createrole(self, *args, **kwargs):
-        message = kwargs.get('message')
+        message = kwargs['message']
         if len(args) == 1:
             games = dict()
             for role in self.server.roles:
@@ -331,7 +331,7 @@ class esbot(discord.Client):
     # change Orisa's presence (game played)
     @command(usage='presence', committee_only=True)
     async def changepresence(self, *args, **kwargs):
-        message = kwargs.get('message')
+        message = kwargs['message']
         if len(args) != 0:
             presence = ' '.join(args)
             await self.change_presence(game=discord.Game(type=0, name=presence))
