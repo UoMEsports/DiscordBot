@@ -251,7 +251,8 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role '.format(arg))
                 await self.add_roles(member, *roles)
-                await self.temp_respond(message, '\n'.join(responses))
+                # Don't temp respond so people can learn by example
+                await self.send_message(message.channel, '\n'.join(responses))
         else:
             raise UsageException
 
@@ -305,7 +306,8 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role'.format(game))
                 await self.remove_roles(member, *roles)
-                await self.temp_respond(message, '\n'.join(responses))
+                # Don't temp respond so people can learn by example
+                await self.send_message(message.channel, '\n'.join(responses))
         else:
             raise UsageException
 
