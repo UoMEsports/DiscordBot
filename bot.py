@@ -121,15 +121,16 @@ class esbot(discord.Client):
                 if self.member_role not in member.roles and self.guest_role not in member.roles:
                     await self.accept_terms(member, message_content_lower)
             else:
-                # process the various responses as tasks to avoid async blocking
-                tasks = []
+                # process the responses in parallel because we do some async sleeping
+                coros = []
+
+                coros.append(self.meme_response(message, message_content_lower))
                 if message_content_lower.startswith(self.command_prefix):
-                    tasks.append(asyncio.ensure_future(self.process_commands(message, message_content)))
-                tasks.append(asyncio.ensure_future(self.meme_response(message, message_content_lower)))
+                    coros.append(self.process_commands(message, message_content))
                 if profanity.contains_profanity(message_content):
-                    tasks.append(asyncio.ensure_future(self.christian_server(message, message_content)))
-                for task in tasks:
-                    await task
+                    coros.append(self.christian_server(message, message_content))
+
+                await asyncio.wait(coros)
         
     # check if message is a PM - terms and conditions
     async def accept_terms(self, member, message_content_lower):
