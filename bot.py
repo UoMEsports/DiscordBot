@@ -10,6 +10,7 @@ from functools import wraps
 from os import system
 from profanity import profanity
 
+# this is a zero width seperator
 zero_seperator = '​'
 
 # incorrect usage exception
