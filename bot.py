@@ -6,6 +6,7 @@ Christian Moulsdale, 2017
 import discord
 import asyncio
 
+from configparser import ConfigParser
 from functools import wraps
 from os import system
 from profanity import profanity
@@ -23,6 +24,13 @@ class esbot(discord.Client):
     def __init__(self, command_prefix = '!'):
         super().__init__()
         self.command_prefix = command_prefix
+        self.config = ConfigParser()
+        self.config.read('esbot.cfg')
+        self.token = self.config.get('esbot', 'token')
+
+    # run the bot
+    def run(self):
+        super().run(self.token)
 
     # respond to a message and then delete the message and response after a given lifetime with a default of 30s
     async def temp_respond(self, message, str_response, lifetime=30):
@@ -53,14 +61,14 @@ class esbot(discord.Client):
                 self.commands.append(att)
                 if not hasattr(attr, 'is_committee_only'):
                     self.non_committee_commands.append(att)
-        
-        # initialise the server variables as global variables
-        self.server = discord.utils.get(self.servers, id = '230727209202089984')
-        self.member_role = discord.utils.get(self.server.roles, id = '233644097007517697')
-        self.guest_role = discord.utils.get(self.server.roles, id = '347731764606795776')
-        self.committee_role = discord.utils.get(self.server.roles, id = '233643432843804674')
-        self.no_merci_emoji = discord.utils.get(self.server.emojis, name = 'nomerci')
-        self.team_scrub_emoji = discord.utils.get(self.server.emojis, name = 'teamscrub')
+
+        # read server variable ids from the config file and intialise them as global variables
+        self.server = discord.utils.get(self.servers, id=self.config.get('esbot', 'server_id'))
+        self.member_role = discord.utils.get(self.server.roles, id=self.config.get('esbot', 'member_id'))
+        self.guest_role = discord.utils.get(self.server.roles, id=self.config.get('esbot', 'guest_id'))
+        self.committee_role = discord.utils.get(self.server.roles, id=self.config.get('esbot', 'committee_id'))
+        self.no_merci_emoji = discord.utils.get(self.server.emojis, name='nomerci')
+        self.team_scrub_emoji = discord.utils.get(self.server.emojis, name='teamscrub')
         
         # set the current game to 'Orisa because she's the best hero'
         await self.change_presence(game = discord.Game(type=0, name = 'Orisa because she\'s the best hero'))
@@ -79,6 +87,7 @@ class esbot(discord.Client):
             @wraps(func)
             async def sub_wrapper(self, *args, details=False, **kwargs):
                 message = kwargs.get('message')
+                member = kwargs.get('member')
                 # if ran as part of help command, return the usage
                 if details:
                     response = ''
@@ -91,7 +100,6 @@ class esbot(discord.Client):
                     return response
                 # if committe only, check if the user has the committee role
                 if committee_only:
-                    member = kwargs.get('member')
                     if self.committee_role in member.roles:
                         try:
                             return await func(self, *args, **kwargs)
@@ -122,15 +130,16 @@ class esbot(discord.Client):
                 if self.member_role not in member.roles and self.guest_role not in member.roles:
                     await self.accept_terms(member, message_content_lower)
             else:
-                # process the various responses as tasks to avoid async blocking
-                tasks = []
+                # process the responses in parallel because we do some async sleeping
+                coros = []
+
+                coros.append(self.meme_response(message, message_content_lower))
                 if message_content_lower.startswith(self.command_prefix):
-                    tasks.append(asyncio.ensure_future(self.process_commands(message, message_content)))
-                tasks.append(asyncio.ensure_future(self.meme_response(message, message_content_lower)))
+                    coros.append(self.process_commands(message, message_content))
                 if profanity.contains_profanity(message_content):
-                    tasks.append(asyncio.ensure_future(self.christian_server(message, message_content)))
-                for task in tasks:
-                    await task
+                    coros.append(self.christian_server(message, message_content))
+
+                await asyncio.wait(coros)
         
     # check if message is a PM - terms and conditions
     async def accept_terms(self, member, message_content_lower):
@@ -340,4 +349,4 @@ class esbot(discord.Client):
         
 # start the bot
 bot = esbot()
-bot.run('token')
+bot.run()
