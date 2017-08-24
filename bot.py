@@ -59,7 +59,7 @@ class esbot(discord.Client):
             attr = getattr(self, att, None)
             if hasattr(attr, 'is_command'):
                 self.commands.append(att)
-                if not hasattr(attr, 'is_committee_only'):
+                if not attr.is_committee_only:
                     self.non_committee_commands.append(att)
 
         # read server variable ids from the config file and intialise them as global variables
@@ -82,22 +82,14 @@ class esbot(discord.Client):
     def command(usage='', committee_only=False):
         def wrapper(func):
             func.is_command = True
-            if committee_only:
-                func.is_committee_only = True
+            func.is_committee_only = committee_only
+            func.usage = usage
+            
             @wraps(func)
-            async def sub_wrapper(self, *args, details=False, **kwargs):
-                message = kwargs.get('message')
-                member = kwargs.get('member')
-                # if ran as part of help command, return the usage
-                if details:
-                    response = ''
-                    if committee_only:
-                        if self.committee_role in member.roles:
-                            response += 'Usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
-                        response += 'This command is committee only'
-                    else:
-                        response += 'Usage is `{}{} {}`. '.format(self.command_prefix, func.__name__, usage)
-                    return response
+            async def sub_wrapper(self, *args, **kwargs):
+                message = kwargs['message']
+                member = kwargs['member']
+
                 # if committe only, check if the user has the committee role
                 if committee_only:
                     if self.committee_role in member.roles:
@@ -112,6 +104,7 @@ class esbot(discord.Client):
                 except UsageException:
                     return await self.temp_respond(message, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
             return sub_wrapper
+            
         return wrapper
     
     #check the contents of the message
@@ -196,8 +189,8 @@ class esbot(discord.Client):
     # list the bot commands
     @command(usage='[command(s)]')
     async def help(self, *args, **kwargs):
-        member = kwargs.get('member')
-        message = kwargs.get('message')
+        member = kwargs['member']
+        message = kwargs['message']
         # check if a command has been given to list the usage
         if len(args) == 0:
             response = '**EsportsBot commands**\n```!'
@@ -211,8 +204,14 @@ class esbot(discord.Client):
             responses = []
             for arg in args:
                 if arg.lower() in self.commands:
-                    cmd = getattr(self, arg.lower(), None)
-                    responses.append(await cmd(*args, **kwargs, details=True))
+                    cmd = getattr(self, arg.lower())
+                    if cmd.is_committee_only:
+                        if self.committee_role in member.roles:
+                            responses.append('Usage is `{}{} {}`.'.format(self.command_prefix, cmd.__name__, cmd.usage))
+                        responses.append('This command is committee only')
+                    else:
+                        responses.append('Usage is `{}{} {}`.'.format(self.command_prefix, cmd.__name__, cmd.usage))
+
                 else:
                     responses.append('Command `{}{}` not found.'.format(self.command_prefix, arg))
             await self.temp_respond(message, '\n'.join(responses))
@@ -220,8 +219,8 @@ class esbot(discord.Client):
     # restart the bot
     @command(committee_only=True)
     async def restart(self, *args, **kwargs):
-        message = kwargs.get('message')
-        author = kwargs.get('author')
+        message = kwargs['message']
+        author = kwargs['author']
         await self.send_message(author, 'Restarting.')
         await self.delete_message(message)
         print('Restarting the bot.')
@@ -232,8 +231,8 @@ class esbot(discord.Client):
     # add game role
     @command(usage='game(s) | list')
     async def addrole(self, *args, **kwargs):
-        member = kwargs.get('member')
-        message = kwargs.get('message')
+        member = kwargs['member']
+        message = kwargs['message']
         if len(args) != 0:
             games = dict()
             for role in self.server.roles:
@@ -268,8 +267,8 @@ class esbot(discord.Client):
     # remove game role
     @command(usage='game(s) | list | all')
     async def removerole(self, *args, **kwargs):
-        member = kwargs.get('member')
-        message = kwargs.get('message')
+        member = kwargs['member']
+        message = kwargs['message']
         if len(args) != 0:
             games = dict()
             for role in self.server.roles:
@@ -322,7 +321,7 @@ class esbot(discord.Client):
     # create new game role
     @command(usage='game', committee_only=True)
     async def createrole(self, *args, **kwargs):
-        message = kwargs.get('message')
+        message = kwargs['message']
         if len(args) == 1:
             games = dict()
             for role in self.server.roles:
@@ -339,7 +338,7 @@ class esbot(discord.Client):
     # change Orisa's presence (game played)
     @command(usage='presence', committee_only=True)
     async def changepresence(self, *args, **kwargs):
-        message = kwargs.get('message')
+        message = kwargs['message']
         if len(args) != 0:
             presence = ' '.join(args)
             await self.change_presence(game=discord.Game(type=0, name=presence))
