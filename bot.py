@@ -9,11 +9,20 @@ import asyncio
 from configparser import ConfigParser
 from functools import wraps
 from os import listdir, system
-from profanity import profanity
 from sys import argv
 
 # this is a zero width seperator
 zero_seperator = '​'
+
+# list of profanities
+profanities = ['arse', 'ass', 'bastard', 'bellend', 'bitch', 'bloody', 'bollocks', 'cock', 'cunt', 'dick', 'fag', 'fuck', 'piss', 'shit', 'tit', 'twat', 'wank', 'whore']
+
+# check if a message contains a profanity
+def contains_profanity(message_content_lower):
+    for profanity in profanities:
+        if profanity in message_content_lower:
+            return True
+    return False
 
 # incorrect usage exception
 class UsageException(Exception):
@@ -149,7 +158,7 @@ class esbot(discord.Client):
                 coros.append(self.meme_response(message, message_content_lower))
                 if message_content_lower.startswith(self.command_prefix):
                     coros.append(self.process_commands(message, message_content))
-                if profanity.contains_profanity(message_content):
+                if contains_profanity(message_content):
                     coros.append(self.christian_server(message, message_content))
 
                 await asyncio.wait(coros)
@@ -192,7 +201,7 @@ class esbot(discord.Client):
 
     # this is a christian server
     async def christian_server(self, message, message_content):
-        response = await self.send_file(message.channel, fp = 'christianserverorisa.png', content = profanity.censor(message.content))
+        response = await self.send_file(message.channel, fp='christianserverorisa.png')
         await asyncio.sleep(30)
         await self.delete_message(response)
 
