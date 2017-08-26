@@ -53,17 +53,56 @@ class esbot(discord.Client):
     def run(self):
         super().run(self.token)
 
+    # safely perform various coroutines
+
+    # safely send a message
+    async def safe_send_message(self, destination, content):
+        try:
+            return await super().send_message(destination, content)
+        except:
+            pass
+
+    # safely send a file
+    async def safe_send_file(self, destination, fp):
+        try:
+            return await super().send_file(destination, fp)
+        except:
+            pass
+
+    # safely delete a message
+    async def safe_delete_message(self, message):
+        try:
+            await super().delete_message(message)
+        except:
+            pass
+
+    # safely add a reaction
+    async def safe_add_reaction(self, message, emoji):
+        try:
+            await super().add_reaction(message, emoji)
+        except:
+            pass
+
+    # determine whether to respond temporarily depending on the channel
+    async def respond(self, channel, message, str_response):
+        if channel is self.role_channel:
+            await self.safe_send_message(channel, str_response)
+        else:
+            await self.temp_respond(message, str_response)
+
     # respond to a message and then delete the message and response after a given lifetime with a default of 30s
     async def temp_respond(self, message, str_response, lifetime=30):
-        response = await self.send_message(message.channel, str_response)
+        response = await self.safe_send_message(message.channel, str_response)
+        print(response.content)
         await asyncio.sleep(lifetime)
-        await self.delete_messages([message, response])
+        await self.safe_delete_message(message)
+        await self.safe_delete_message(response)
 
     # respond to a message and then delete the response after a given lifetime with a default of 30s
     async def temp_say(self, channel, str_response, lifetime=30):
-        response = await self.send_message(channel, str_response)
+        response = await self.safe_send_message(channel, str_response)
         await asyncio.sleep(lifetime)
-        await self.delete_message(response)
+        await self.safe_delete_message(response)
         
     # output to terminal if the bot successfully logs in
     async def on_ready(self):
@@ -121,17 +160,17 @@ class esbot(discord.Client):
                         return await self.temp_respond(message, 'Correct usage is `{}{} {}`.'.format(self.command_prefix, func.__name__, usage))
 
                 if committee_only:
-                    await self.delete_message(message)
-                    return await self.send_message(self.role_channel, '{}, you need to be a committee member to use this command.'.format(member.mention))
+                    await self.safe_delete_message(message)
+                    return await self.safe_send_message(self.role_channel, '{}, you need to be a committee member to use this command.'.format(member.mention))
 
                 if channel is self.role_channel:
                     try:
                         return await func(self, *args, **kwargs)
                     except UsageException:
-                        return await self.send_message(channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
+                        return await self.safe_send_message(channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
                 else:
-                    await self.delete_message(message)
-                    return await self.send_message(self.role_channel, '{} use commands here.'.format(member.mention))
+                    await self.safe_delete_message(message)
+                    return await self.safe_send_message(self.role_channel, '{} use commands here.'.format(member.mention))
             return sub_wrapper
             
         return wrapper
@@ -167,58 +206,66 @@ class esbot(discord.Client):
     async def accept_terms(self, member, message_content_lower):
         if message_content_lower.startswith('yes'):
             # user is a member
-            await self.send_message(member, 'Member role has been added')
+            await self.safe_send_message(member, 'Member role has been added')
             return await self.add_roles(member, self.member_role)
         elif message_content_lower.startswith('no'):
             # user is a guest
-            await self.send_message(member, 'Guest role has been added')
+            await self.safe_send_message(member, 'Guest role has been added')
             return await self.add_roles(member, self.guest_role)
         
     # check for a command
     async def process_commands(self, message, message_content):
         command, *args = message_content.split()
         command = command.replace(self.command_prefix, '', 1).lower()
+        member = self.server.get_member(message.author.id)
+        channel = message.channel
+            
         if command in self.commands:
             kwargs = dict()
             kwargs['message'] = message
             kwargs['author'] = message.author
-            kwargs['member'] = self.server.get_member(message.author.id)
-            kwargs['channel'] = message.channel
+            kwargs['member'] = member
+            kwargs['channel'] = channel
             
             cmd = getattr(self, command, None)
             await cmd(*args, **kwargs)
         else:
-            await self.temp_respond(message, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands.'.format(self.command_prefix, command))
-
+            if message.channel is self.role_channel or self.committee_role in member.roles:
+                await self.respond(channel, message, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands'.format(self.command_prefix, command))
+            else:
+                await self.safe_delete_message(message)
+                await self.safe_send_message(self.role_channel, '{} use commands here.'.format(member.mention))
+                
     # process the meme responses
     async def meme_response(self, message, message_content_lower):
         if 'merci' in message_content_lower:
-            await self.add_reaction(message, self.no_merci_emoji)
+            await self.safe_add_reaction(message, self.no_merci_emoji)
         if 'scrub' in message_content_lower:
-            await self.add_reaction(message, self.team_scrub_emoji)
+            await self.safe_add_reaction(message, self.team_scrub_emoji)
         if 'behave' in message_content_lower:
             await self.temp_say(message.channel, 'No, you.')
 
     # this is a christian server
     async def christian_server(self, message, message_content):
-        response = await self.send_file(message.channel, fp='christianserverorisa.png')
+        response = await self.safe_send_file(message.channel, fp='christianserverorisa.png')
         await asyncio.sleep(30)
-        await self.delete_message(response)
+        await self.safe_delete_message(response)
 
     # send the terms and conditions prompts to a member
     async def send_terms(self, member):
-        await self.send_message(member, 'Are you a member of the University of Manchester Esports Society? (`yes` or `no`) You can be in this server without being a member as a guest.')
+        await self.safe_send_message(member, 'Are you a member of the University of Manchester Esports Society? (`yes` or `no`) You can be in this server without being a member as a guest.')
 
     # when a member joins, send them a PM asking if they accept the terms and conditions
     async def on_member_join(self, member):
-        await self.send_message(member, 'Welcome to the University of Manchester Esports Society discord server!')
+        await self.safe_send_message(member, 'Welcome to the University of Manchester Esports Society discord server!')
         await self.send_terms(member)
 
     # BOT COMMANDS
-    
+ 
     # list the bot commands
     @command(usage='[command(s)]')
     async def help(self, *args, **kwargs):
+        channel = kwargs['channel']
         member = kwargs['member']
         message = kwargs['message']
         # check if a command has been given to list the usage
@@ -229,7 +276,7 @@ class esbot(discord.Client):
             else:
                 response += ', !'.join(self.non_committee_commands)
             response += '```'
-            await self.temp_respond(message, response)
+            await self.respond(channel, message, response)
         else:
             responses = []
             for arg in args:
@@ -244,15 +291,15 @@ class esbot(discord.Client):
 
                 else:
                     responses.append('Command `{}{}` not found.'.format(self.command_prefix, arg))
-            await self.temp_respond(message, '\n'.join(responses))
+            await self.respond(channel, message, '\n'.join(responses))
 
     # restart the bot
     @command(committee_only=True)
     async def restart(self, *args, **kwargs):
         message = kwargs['message']
         author = kwargs['author']
-        await self.send_message(author, 'Restarting.')
-        await self.delete_message(message)
+        await self.safe_send_message(author, 'Restarting.')
+        await self.safe_delete_message(message)
         print('Restarting the bot.')
         print('------')
         system('python3 bot.py')
@@ -290,7 +337,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role '.format(arg))
                 await self.add_roles(member, *roles)
-                await self.send_message(self.role_channel, '\n'.join(responses))
+                await self.safe_send_message(self.role_channel, '\n'.join(responses))
         else:
             raise UsageException
 
@@ -344,7 +391,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role'.format(game))
                 await self.remove_roles(member, *roles)
-                await self.send_message(self.role_channel, '\n'.join(responses))
+                await self.safe_send_message(self.role_channel, '\n'.join(responses))
         else:
             raise UsageException
 
