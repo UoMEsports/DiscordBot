@@ -1,6 +1,6 @@
 '''
 EsportsBot
-Christian Moulsdale, 2017
+Christian Moulsdale and Tom Mewett, 2017
 '''
 
 import discord
@@ -8,8 +8,9 @@ import asyncio
 
 from configparser import ConfigParser
 from functools import wraps
-from os import system
+from os import listdir, system
 from profanity import profanity
+from sys import argv
 
 # this is a zero width seperator
 zero_seperator = '​'
@@ -25,8 +26,19 @@ class esbot(discord.Client):
         super().__init__()
         self.command_prefix = command_prefix
         self.config = ConfigParser()
-        self.config.read('esbot.cfg')
-        self.token = self.config.get('esbot', 'token')
+
+        # check if valid arguments have been given
+        if len(argv) == 2:
+            if argv[1].endswith('.cfg') and argv[1] in listdir():
+                self.config.read(argv[1])
+            else:
+                print('Invalid config file {}'.format(argv[1]))
+                exit()
+        else:
+            print('Please specify a config file, correct usage is python3 bot.py config.cfg')
+            exit()
+        
+        self.token = self.config.get('general', 'token')
 
     # run the bot
     def run(self):
@@ -63,10 +75,12 @@ class esbot(discord.Client):
                     self.non_committee_commands.append(att)
 
         # read server variable ids from the config file and intialise them as global variables
-        self.server = discord.utils.get(self.servers, id=self.config.get('esbot', 'server_id'))
-        self.member_role = discord.utils.get(self.server.roles, id=self.config.get('esbot', 'member_id'))
-        self.guest_role = discord.utils.get(self.server.roles, id=self.config.get('esbot', 'guest_id'))
-        self.committee_role = discord.utils.get(self.server.roles, id=self.config.get('esbot', 'committee_id'))
+        self.server = discord.utils.get(self.servers, id=self.config.get('general', 'server_id'))
+        self.member_role = discord.utils.get(self.server.roles, id=self.config.get('roles', 'member_id'))
+        self.guest_role = discord.utils.get(self.server.roles, id=self.config.get('roles', 'guest_id'))
+        self.committee_role = discord.utils.get(self.server.roles, id=self.config.get('roles', 'committee_id'))
+        self.role_channel = discord.utils.get(self.server.channels, id=self.config.get('channels', 'role_id'))
+        self.committee_channel = discord.utils.get(self.server.channels, id=self.config.get('channels', 'committee_id'))
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name='nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name='teamscrub')
         
@@ -89,20 +103,26 @@ class esbot(discord.Client):
             async def sub_wrapper(self, *args, **kwargs):
                 message = kwargs['message']
                 member = kwargs['member']
+                channel = kwargs['channel']
 
-                # if committe only, check if the user has the committee role
+                if self.committee_role in member.roles:
+                    try:
+                        return await func(self, *args, **kwargs)
+                    except UsageException:
+                        return await self.temp_respond(message, 'Correct usage is `{}{} {}`.'.format(self.command_prefix, func.__name__, usage))
+
                 if committee_only:
-                    if self.committee_role in member.roles:
-                        try:
-                            return await func(self, *args, **kwargs)
-                        except UsageException:
-                            return await self.temp_respond(message, 'Correct usage is `{}{} {}`. This command is committee only.'.format(self.command_prefix, func.__name__, usage))
-                    else:
-                        return await self.temp_respond(message, 'You need to be a committee member to use this command.')
-                try:
-                    return await func(self, *args, **kwargs)
-                except UsageException:
-                    return await self.temp_respond(message, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
+                    await self.delete_message(message)
+                    return await self.send_message(self.role_channel, '{}, you need to be a committee member to use this command.'.format(member.mention))
+
+                if channel is self.role_channel:
+                    try:
+                        return await func(self, *args, **kwargs)
+                    except UsageException:
+                        return await self.send_message(channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
+                else:
+                    await self.delete_message(message)
+                    return await self.send_message(self.role_channel, '{} use commands here.'.format(member.mention))
             return sub_wrapper
             
         return wrapper
@@ -154,6 +174,7 @@ class esbot(discord.Client):
             kwargs['message'] = message
             kwargs['author'] = message.author
             kwargs['member'] = self.server.get_member(message.author.id)
+            kwargs['channel'] = message.channel
             
             cmd = getattr(self, command, None)
             await cmd(*args, **kwargs)
@@ -260,7 +281,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role '.format(arg))
                 await self.add_roles(member, *roles)
-                await self.temp_respond(message, '\n'.join(responses))
+                await self.send_message(self.role_channel, '\n'.join(responses))
         else:
             raise UsageException
 
@@ -314,7 +335,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role'.format(game))
                 await self.remove_roles(member, *roles)
-                await self.temp_respond(message, '\n'.join(responses))
+                await self.send_message(self.role_channel, '\n'.join(responses))
         else:
             raise UsageException
 
