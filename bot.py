@@ -262,7 +262,7 @@ class esbot(discord.Client):
         await self.safe_send_message(self.esbot_channel, 'Restarting.')
         print('Restarting the bot.')
         print('------')
-        system('python3 bot.py')
+        system('python3 {}'.format(' '.join(argv)))
         exit()
 
     # add game role
