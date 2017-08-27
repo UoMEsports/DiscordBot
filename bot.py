@@ -112,9 +112,6 @@ class esbot(discord.Client):
         self.esbot_channel = discord.utils.get(self.server.channels, id=self.config.get('channels', 'esbot_id'))
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name='nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name='teamscrub')
-        
-        # set the current game to 'Orisa because she's the best hero'
-        await self.change_presence(game = discord.Game(type=0, name = 'Orisa because she\'s the best hero'))
 
         # send prompts to all members who don't currently have the member role
         for member in self.server.members:
