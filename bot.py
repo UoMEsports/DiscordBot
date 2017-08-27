@@ -83,21 +83,6 @@ class esbot(discord.Client):
         except:
             pass
 
-    # determine whether to respond temporarily depending on the channel
-    async def respond(self, channel, message, str_response):
-        if channel is self.role_channel:
-            await self.safe_send_message(channel, str_response)
-        else:
-            await self.temp_respond(message, str_response)
-
-    # respond to a message and then delete the message and response after a given lifetime with a default of 30s
-    async def temp_respond(self, message, str_response, lifetime=30):
-        response = await self.safe_send_message(message.channel, str_response)
-        print(response.content)
-        await asyncio.sleep(lifetime)
-        await self.safe_delete_message(message)
-        await self.safe_delete_message(response)
-
     # respond to a message and then delete the response after a given lifetime with a default of 30s
     async def temp_say(self, channel, str_response, lifetime=30):
         response = await self.safe_send_message(channel, str_response)
@@ -114,21 +99,17 @@ class esbot(discord.Client):
 
         # get the list of commands and committee-only-commands
         self.commands = []
-        self.non_committee_commands = []
         for att in dir(self):
             attr = getattr(self, att, None)
             if hasattr(attr, 'is_command'):
                 self.commands.append(att)
-                if not attr.is_committee_only:
-                    self.non_committee_commands.append(att)
 
         # read server variable ids from the config file and intialise them as global variables
         self.server = discord.utils.get(self.servers, id=self.config.get('general', 'server_id'))
         self.member_role = discord.utils.get(self.server.roles, id=self.config.get('roles', 'member_id'))
         self.guest_role = discord.utils.get(self.server.roles, id=self.config.get('roles', 'guest_id'))
         self.committee_role = discord.utils.get(self.server.roles, id=self.config.get('roles', 'committee_id'))
-        self.role_channel = discord.utils.get(self.server.channels, id=self.config.get('channels', 'role_id'))
-        self.committee_channel = discord.utils.get(self.server.channels, id=self.config.get('channels', 'committee_id'))
+        self.esbot_channel = discord.utils.get(self.server.channels, id=self.config.get('channels', 'esbot_id'))
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name='nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name='teamscrub')
         
@@ -151,26 +132,14 @@ class esbot(discord.Client):
             async def sub_wrapper(self, *args, **kwargs):
                 message = kwargs['message']
                 member = kwargs['member']
-                channel = kwargs['channel']
 
-                if self.committee_role in member.roles:
+                if self.committee_role in member.roles or not committee_only:
                     try:
                         return await func(self, *args, **kwargs)
                     except UsageException:
-                        return await self.temp_respond(message, 'Correct usage is `{}{} {}`.'.format(self.command_prefix, func.__name__, usage))
-
-                if committee_only:
-                    await self.safe_delete_message(message)
-                    return await self.safe_send_message(self.role_channel, '{}, you need to be a committee member to use this command.'.format(member.mention))
-
-                if channel is self.role_channel:
-                    try:
-                        return await func(self, *args, **kwargs)
-                    except UsageException:
-                        return await self.safe_send_message(channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
+                        return await self.safe_send_message(self.esbot_channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
                 else:
-                    await self.safe_delete_message(message)
-                    return await self.safe_send_message(self.role_channel, '{} use commands here.'.format(member.mention))
+                    return await self.safe_send_message(self.esbot_channel, 'You need to be a committee member to use that command.'.format(member.mention))
             return sub_wrapper
             
         return wrapper
@@ -220,21 +189,20 @@ class esbot(discord.Client):
         member = self.server.get_member(message.author.id)
         channel = message.channel
             
-        if command in self.commands:
-            kwargs = dict()
-            kwargs['message'] = message
-            kwargs['author'] = message.author
-            kwargs['member'] = member
-            kwargs['channel'] = channel
-            
-            cmd = getattr(self, command, None)
-            await cmd(*args, **kwargs)
-        else:
-            if message.channel is self.role_channel or self.committee_role in member.roles:
-                await self.respond(channel, message, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands'.format(self.command_prefix, command))
+        if channel is self.esbot_channel:
+            if command in self.commands:
+                kwargs = dict()
+                kwargs['message'] = message
+                kwargs['author'] = message.author
+                kwargs['member'] = member
+                
+                cmd = getattr(self, command, None)
+                await cmd(*args, **kwargs)
             else:
-                await self.safe_delete_message(message)
-                await self.safe_send_message(self.role_channel, '{} use commands here.'.format(member.mention))
+                await self.safe_send_message(self.esbot_channel, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands'.format(self.command_prefix, command))
+        else:
+            await self.safe_delete_message(message)
+            await self.safe_send_message(self.esbot_channel, '{} use commands here.'.format(member.mention))
                 
     # process the meme responses
     async def meme_response(self, message, message_content_lower):
@@ -265,18 +233,14 @@ class esbot(discord.Client):
     # list the bot commands
     @command(usage='[command(s)]')
     async def help(self, *args, **kwargs):
-        channel = kwargs['channel']
         member = kwargs['member']
         message = kwargs['message']
         # check if a command has been given to list the usage
         if len(args) == 0:
             response = '**EsportsBot commands**\n```!'
-            if self.committee_role in member.roles:
-                response += ', !'.join(self.commands)
-            else:
-                response += ', !'.join(self.non_committee_commands)
-            response += '```'
-            await self.respond(channel, message, response)
+            response += ', !'.join(self.commands)
+            response += '```\nType `!help command` to get the usage of a command.'
+            await self.safe_send_message(self.esbot_channel, response)
         else:
             responses = []
             for arg in args:
@@ -291,15 +255,14 @@ class esbot(discord.Client):
 
                 else:
                     responses.append('Command `{}{}` not found.'.format(self.command_prefix, arg))
-            await self.respond(channel, message, '\n'.join(responses))
+            await self.safe_send_message(self.esbot_channel, '\n'.join(responses))
 
     # restart the bot
     @command(committee_only=True)
     async def restart(self, *args, **kwargs):
         message = kwargs['message']
         author = kwargs['author']
-        await self.safe_send_message(author, 'Restarting.')
-        await self.safe_delete_message(message)
+        await self.safe_send_message(self.esbot_channel, 'Restarting.')
         print('Restarting the bot.')
         print('------')
         system('python3 bot.py')
@@ -321,7 +284,7 @@ class esbot(discord.Client):
                 for game in games:
                     items.append('`{}`'.format(games[game].name))
                 response += ', '.join(items)
-                await self.temp_respond(message, response)
+                await self.safe_send_message(self.esbot_channel, response)
             else:
                 responses = []
                 roles = []
@@ -337,7 +300,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role '.format(arg))
                 await self.add_roles(member, *roles)
-                await self.safe_send_message(self.role_channel, '\n'.join(responses))
+                await self.safe_send_message(self.esbot_channel, '\n'.join(responses))
         else:
             raise UsageException
 
@@ -359,10 +322,10 @@ class esbot(discord.Client):
                     if role in member.roles:
                         items.append('`{}`'.format(role.name))
                 if len(items) == 0:
-                    await self.temp_respond(message, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
+                    await self.safe_send_message(self.esbot_channel, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
                 else:
                     response += ', '.join(items)
-                    await self.temp_respond(message, response)
+                    await self.safe_send_message(self.esbot_channel, response)
             elif args[0].lower() == 'all':
                 responses = []
                 roles = []
@@ -373,9 +336,9 @@ class esbot(discord.Client):
                         responses.append('Removed `{}` role'.format(role.name))
                 if len(responses) != 0:
                     await self.remove_roles(member, *roles)
-                    await self.temp_respond(message, '\n'.join(responses))
+                    await self.safe_send_message(self.esbot_channel, '\n'.join(responses))
                 else:
-                    await self.temp_respond(message, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
+                    await self.safe_send_message(self.esbot_channel, 'You currently have no game roles. Add them using the `{}addrole` command.'.format(self.command_prefix))
             else:
                 responses = []
                 roles = []
@@ -391,7 +354,7 @@ class esbot(discord.Client):
                     else:
                         responses.append('Didn\'t recognise `{}` role'.format(game))
                 await self.remove_roles(member, *roles)
-                await self.safe_send_message(self.role_channel, '\n'.join(responses))
+                await self.safe_send_message(self.esbot_channel, '\n'.join(responses))
         else:
             raise UsageException
 
@@ -406,9 +369,9 @@ class esbot(discord.Client):
                     games[role.name.replace(zero_seperator, '').lower()] = role
             if args[0].lower() not in games:
                 await self.create_role(self.server, name='{}{}'.format(zero_seperator, args[0]), mentionable=True, permissions=self.server.default_role.permissions)
-                await self.temp_respond(message, 'Created `{}` game role'.format(args[0]))
+                await self.safe_send_message(self.esbot_channel, 'Created `{}` game role'.format(args[0]))
             else:
-                await self.temp_respond(message, '`{}` game role already exists'.format(games[args[0].lower()].name))
+                await self.safe_send_message(self.esbot_channel, '`{}` game role already exists'.format(games[args[0].lower()].name))
         else:
             raise UsageException
 
@@ -419,7 +382,7 @@ class esbot(discord.Client):
         if len(args) != 0:
             presence = ' '.join(args)
             await self.change_presence(game=discord.Game(type=0, name=presence))
-            await self.temp_respond(message, 'Changed presence to `{}`.'.format(presence))
+            await self.safe_send_message(self.esbot_channel, 'Changed presence to `{}`.'.format(presence))
         else:
             raise UsageException
         
