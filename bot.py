@@ -375,9 +375,9 @@ class esbot(discord.Client):
                         if str(member.status) in ['online', 'idle']:
                             online.append(member.name)
                 if len(all) != 0:
-                    response = 'List of {} members with `{}` role:\n```{}```\n'.format(len(all), role.name, ', '.join(all))
+                    response = 'List of {} members with `{}` role:\n```{}```\n'.format(len(all), role.name, ', '.join(sorted(all)))
                     if len(online) != 0:
-                        response += 'List of {} online members with `{}` role:\n```{}```'.format(len(online), role.name, ', '.join(online))
+                        response += 'List of {} online members with `{}` role:\n```{}```'.format(len(online), role.name, ', '.join(sorted(online)))
                     else:
                         response += 'There are currently no online members with `{}` role'.format(role.name)
                     await self.safe_send_message(self.esbot_channel, response)
