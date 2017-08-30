@@ -29,7 +29,7 @@ class UsageException(Exception):
     pass
 
 # the esbot class
-class esbot(discord.Client):
+class Esbot(discord.Client):
     # initialise the bot
     def __init__(self, command_prefix = '!'):
         super().__init__()
@@ -417,5 +417,4 @@ class esbot(discord.Client):
             raise UsageException
         
 # start the bot
-bot = esbot()
-bot.run()
+Esbot().run()
