@@ -163,8 +163,8 @@ class esbot(discord.Client):
                 coros.append(self.meme_response(message, message_content_lower))
                 if message_content_lower.startswith(self.command_prefix):
                     coros.append(self.process_commands(message, message_content))
-                if contains_profanity(message_content):
-                    coros.append(self.christian_server(message, message_content))
+                if contains_profanity(message_content_lower):
+                    coros.append(self.christian_server(message))
 
                 await asyncio.wait(coros)
         
@@ -211,7 +211,7 @@ class esbot(discord.Client):
             await self.temp_say(message.channel, 'No, you.')
 
     # this is a christian server
-    async def christian_server(self, message, message_content):
+    async def christian_server(self, message):
         response = await self.safe_send_file(message.channel, fp='christianserverorisa.png')
         await asyncio.sleep(30)
         await self.safe_delete_message(response)
