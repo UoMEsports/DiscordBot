@@ -355,6 +355,30 @@ class esbot(discord.Client):
         else:
             raise UsageException
 
+    # list the members of a game role
+    @command(usage='game')
+    async def listrole(self, *args, **kwargs):
+        message = kwargs['message']
+        if len(args) == 1:
+            games = dict()
+            for role in self.server.roles:
+                if role.name.startswith(zero_seperator):
+                    games[role.name.replace(zero_seperator, '').lower()] = role
+            game = args[0].lower()
+            responses = []
+            if game in games:
+                for member in self.server.members:
+                    if games[game] in member.roles:
+                        responses.append(member.name)
+                if len(responses) != 0:
+                    await self.safe_send_message(self.esbot_channel, 'List of members with `{}` role:\n```{}```'.format(games[game].name, ', '.join(responses)))
+                else:
+                    await self.safe_send_message(self.esbot_channel, 'There are currently no members with the `{0}` role. Add it using `{1}addrole {0}'.format(self.command_prefix, game))
+            else:
+                await self.safe_send_message(self.esbot_channel, 'Didn\'t recognise `{}` role.'.format(game))
+        else:
+            raise UsageException
+
     # create new game role
     @command(usage='game', committee_only=True)
     async def createrole(self, *args, **kwargs):
