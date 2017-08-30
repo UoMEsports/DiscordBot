@@ -365,15 +365,24 @@ class esbot(discord.Client):
                 if role.name.startswith(zero_seperator):
                     games[role.name.replace(zero_seperator, '').lower()] = role
             game = args[0].lower()
-            responses = []
+            all = []
+            online = []
             if game in games:
+                role = games[game]
                 for member in self.server.members:
-                    if games[game] in member.roles:
-                        responses.append(member.name)
-                if len(responses) != 0:
-                    await self.safe_send_message(self.esbot_channel, 'List of members with `{}` role:\n```{}```'.format(games[game].name, ', '.join(responses)))
+                    if role in member.roles:
+                        all.append(member.name)
+                        if str(member.status) in ['online', 'idle']:
+                            online.append(member.name)
+                if len(all) != 0:
+                    response = 'List of {} members with `{}` role:\n```{}```\n'.format(len(all), role.name, ', '.join(all))
+                    if len(online) != 0:
+                        response += 'List of {} online members with `{}` role:\n```{}```'.format(len(online), role.name, ', '.join(online))
+                    else:
+                        response += 'There are currently no online members with `{}` role'.format(role.name)
+                    await self.safe_send_message(self.esbot_channel, response)
                 else:
-                    await self.safe_send_message(self.esbot_channel, 'There are currently no members with the `{0}` role. Add it using `{1}addrole {0}'.format(self.command_prefix, game))
+                    await self.safe_send_message(self.esbot_channel, 'There are currently no members with `{0}` role. Add it using `{1}addrole {0}`'.format(role.name, self.command_prefix))
             else:
                 await self.safe_send_message(self.esbot_channel, 'Didn\'t recognise `{}` role.'.format(game))
         else:
