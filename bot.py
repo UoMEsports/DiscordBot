@@ -113,6 +113,9 @@ class Esbot(discord.Client):
         self.no_merci_emoji = discord.utils.get(self.server.emojis, name='nomerci')
         self.team_scrub_emoji = discord.utils.get(self.server.emojis, name='teamscrub')
 
+        # change the game to 'type !help for the list of commands'
+        await self.change_presence(game=discord.Game(type=0, name='type !help for the list of commands'))
+
         # send prompts to all members who don't currently have the member role
         for member in self.server.members:
             if self.member_role not in member.roles and self.guest_role not in member.roles and member != self.user:
