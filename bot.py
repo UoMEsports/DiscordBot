@@ -237,9 +237,9 @@ class Esbot(discord.Client):
         message = kwargs['message']
         # check if a command has been given to list the usage
         if len(args) == 0:
-            response = '**EsportsBot commands**\n```!'
+            response = '**EsportsBot commands**\n```\n!'
             response += ', !'.join(self.commands)
-            response += '```\nType `!help command` to get the usage of a command.'
+            response += '\n```\nType `!help command` to get the usage of a command.'
             await self.safe_send_message(self.esbot_channel, response)
         else:
             responses = []
@@ -378,9 +378,9 @@ class Esbot(discord.Client):
                         if str(member.status) in ['online', 'idle']:
                             online.append(member.name)
                 if len(all) != 0:
-                    response = 'List of {} members with `{}` role:\n```{}```\n'.format(len(all), role.name, ', '.join(sorted(all, key=str.lower)))
+                    response = 'List of {} members with `{}` role:\n```\n{}\n```\n'.format(len(all), role.name, ', '.join(sorted(all, key=str.lower)))
                     if len(online) != 0:
-                        response += 'List of {} online members with `{}` role:\n```{}```'.format(len(online), role.name, ', '.join(sorted(online, key=str.lower)))
+                        response += 'List of {} online members with `{}` role:\n```\n{}\n```'.format(len(online), role.name, ', '.join(sorted(online, key=str.lower)))
                     else:
                         response += 'There are currently no online members with `{}` role'.format(role.name)
                     await self.safe_send_message(self.esbot_channel, response)
