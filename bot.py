@@ -205,8 +205,6 @@ class Esbot(discord.Client):
             await self.safe_add_reaction(message, self.no_merci_emoji)
         if 'scrub' in message_content_lower:
             await self.safe_add_reaction(message, self.team_scrub_emoji)
-        if 'behave' in message_content_lower:
-            await self.temp_say(message.channel, 'No, you.')
 
     # send the terms and conditions prompts to a member
     async def send_terms(self, member):
