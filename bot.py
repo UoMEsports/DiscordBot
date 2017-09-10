@@ -14,9 +14,6 @@ from sys import argv
 # this is a zero width seperator
 zero_seperator = '​'
 
-# list of profanities
-profanities = ['arse', 'ass', 'bastard', 'bellend', 'bitch', 'bloody', 'bollocks', 'cock', 'cunt', 'dick', 'fag', 'fuck', 'piss', 'shit', 'tit', 'twat', 'wank', 'whore']
-
 # check if a message contains a profanity
 def contains_profanity(message_content_lower):
     for profanity in profanities:
@@ -166,8 +163,6 @@ class Esbot(discord.Client):
                 coros.append(self.meme_response(message, message_content_lower))
                 if message_content_lower.startswith(self.command_prefix):
                     coros.append(self.process_commands(message, message_content))
-                if contains_profanity(message_content_lower):
-                    coros.append(self.christian_server(message))
 
                 await asyncio.wait(coros)
         
@@ -212,12 +207,6 @@ class Esbot(discord.Client):
             await self.safe_add_reaction(message, self.team_scrub_emoji)
         if 'behave' in message_content_lower:
             await self.temp_say(message.channel, 'No, you.')
-
-    # this is a christian server
-    async def christian_server(self, message):
-        response = await self.safe_send_file(message.channel, fp='christianserverorisa.png')
-        await asyncio.sleep(30)
-        await self.safe_delete_message(response)
 
     # send the terms and conditions prompts to a member
     async def send_terms(self, member):
