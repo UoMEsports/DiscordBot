@@ -5,11 +5,19 @@ Christian Moulsdale and Tom Mewett, 2017
 
 import discord
 import asyncio
+import logging
 
 from configparser import ConfigParser
 from functools import wraps
 from os import listdir, system
 from sys import argv
+
+# set up logging
+logger = logging.getLogger('discord')
+logger.setLevel(logging.DEBUG)
+handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+logger.addHandler(handler)
 
 # this is a zero width seperator
 zero_seperator = '​'
