@@ -154,7 +154,8 @@ class Esbot(discord.Client):
                 if self.member_role not in member.roles and self.guest_role not in member.roles:
                     await self.accept_terms(member, message_content_lower)
             else:
-                await self.process_commands(message, message_content)
+                if message_content.startswith(self.command_prefix):
+                    await self.process_commands(message, message_content)
         
     # check if message is a PM - terms and conditions
     async def accept_terms(self, member, message_content_lower):
