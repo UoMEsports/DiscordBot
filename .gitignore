@@ -1,4 +1,5 @@
-# Configuration files
-*.cfg
+*
+
+!*.py
 !empty.cfg
 !*.txt
