@@ -1,3 +1,4 @@
 # Configuration files
 *.cfg
 !empty.cfg
+!*.txt
