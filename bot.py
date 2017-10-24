@@ -616,8 +616,9 @@ class Societybot(discord.Client):
                     SR = data['eu']['stats']['competitive']['overall_stats']['comprank']
                     tier = data['eu']['stats']['competitive']['overall_stats']['tier']
                     if SR == None:
-                        SR = ''
-                    await self.safe_send_message(channel, '`{}: {}({})`'.format(args[0], tier.title(), SR))
+                        await self.safe_send_message(channel, '{} hasn\'t played comp this season'.format(args[0]))
+                    else:
+                        await self.safe_send_message(channel, '`{}: {}({})`'.format(args[0], tier, SR))
                 except KeyError:
                     return await self.safe_send_message(channel, '{} has never played on EU, :slight_frown:'.format(args[0]))
             else:
