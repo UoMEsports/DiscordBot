@@ -12,7 +12,6 @@ from configparser import ConfigParser
 from datetime import datetime, timedelta
 from functools import wraps
 from os import listdir, system
-from progressbar import ProgressBar
 from sys import argv
 
 from email.mime.multipart import MIMEMultipart
@@ -187,27 +186,21 @@ class Societybot(discord.Client):
         # check for consistency with the current list of members
         print('Checking consistency with current members')
         members = self.server.members
-        with ProgressBar(max_value=len(members)) as bar:
-            i = 0
-            for member in members:
-                id = member.id
-                if id not in self.members:
-                    if self.member_role in member.roles:
-                        self.members[member.id] = [str(member), 'member', '0', '', '', '', '', '']
-                    elif self.guest_role in member.roles:
-                        self.members[member.id] = [str(member), 'guest', '0', '', '', '', '', '']
-                    else:
-                        self.members[member.id] = [str(member), '', '0', '', '', '', '', '']
+        for member in members:
+            id = member.id
+            if id not in self.members:
+                if self.member_role in member.roles:
+                    self.members[member.id] = [str(member), 'member', '0', '', '', '', '', '']
+                elif self.guest_role in member.roles:
+                    self.members[member.id] = [str(member), 'guest', '0', '', '', '', '', '']
                 else:
-                    self.members[id][0] = str(member)
+                    self.members[member.id] = [str(member), '', '0', '', '', '', '', '']
+            else:
+                self.members[id][0] = str(member)
 
-                # send prompts to all members who don't currently have the member role
-                if self.member_role not in member.roles and self.guest_role not in member.roles and member != self.user:
-                    await self.send_terms(member)
-
-                # update the progress bar
-                i += 1
-                bar.update(i)
+            # send prompts to all members who don't currently have the member role
+            if self.member_role not in member.roles and self.guest_role not in member.roles and member != self.user:
+                await self.send_terms(member)
 
         # writing to the file
         print('Writing to the members file')
