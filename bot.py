@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 '''
 SocietyBot
 Christian Moulsdale and Tom Mewett, 2017
@@ -6,6 +8,7 @@ Christian Moulsdale and Tom Mewett, 2017
 import asyncio
 import aiohttp
 import discord
+import json
 import smtplib
 
 from configparser import ConfigParser
@@ -20,6 +23,9 @@ from email import encoders
 
 from overwatch_api.core import AsyncOWAPI
 from overwatch_api.constants import *
+
+from urllib.request import urlopen
+from urllib.error import URLError
 
 # this is a zero width seperator
 zero_seperator = '​'
@@ -53,22 +59,25 @@ fromaddr = config.get('email', 'fromaddr')
 password = config.get('email', 'password')
 toaddr = config.get('email', 'toaddr')
 
+# twitch shit
+twitch_name = config.get('twitch', 'name')
+twitch_client_id = config.get('twitch', 'client_id')
+
 # backup the members file
 async def backup_members():
     while True:
         msg = MIMEMultipart()
-         
+
         msg['From'] = fromaddr
         msg['To'] = toaddr
         msg['Subject'] = 'Backup of {} {}'.format(filename, datetime.now().strftime('%Y-%m-%d %H:%M'))
-        
+
         attachment = open(filename, 'rb')
-         
+
         part = MIMEBase('application', 'octet-stream')
         part.set_payload((attachment).read())
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', 'attachment; filename={}'.format(filename))
-         
         msg.attach(part)
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -161,9 +170,9 @@ class Societybot(discord.Client):
         self.command_channel = discord.utils.get(self.server.channels, id=config.get('channels', 'command_id'))
         self.moderation_channel = discord.utils.get(self.server.channels, id=config.get('channels', 'moderation_id'))
 
-        # change the game to 'type !help for the list of commands'
-        print('Changing presence to \'type {}help for the list of commands\''.format(self.command_prefix))
-        await self.change_presence(game=discord.Game(type=0, name='type {}help for the list of commands'.format(self.command_prefix)))
+        # starting the twitch integration
+        print('Starting twitch integration')
+        asyncio.ensure_future(self.check_stream())
 
         # change the nickname of the bot to its name
         print('Changing nickname to {}'.format(bot_name))
@@ -216,8 +225,8 @@ class Societybot(discord.Client):
         # ready to go!
         print('Ready to go!')
         print('------')
-    
-    #check the contents of the message
+
+    # check the contents of the message
     async def on_message(self, message):
         # wait until the bot is ready
         await self.wait_until_ready()
@@ -347,6 +356,22 @@ class Societybot(discord.Client):
                     return await self.safe_send_message(channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
             return sub_wrapper
         return wrapper
+
+    # change the currently playing game if the society twitch account is streaming
+    async def check_stream(self):
+        while True:
+            url = 'https://api.twitch.tv/kraken/streams/{}?client_id={}'.format(twitch_name, twitch_client_id)
+            try:
+                info = json.loads(urlopen(url, timeout = 15).read().decode('utf-8'))
+                if info['stream'] == None:
+                    # nothing is streaming
+                    await self.change_presence(game=discord.Game(type=0, name='type {}help for the list of commands'.format(self.command_prefix)))
+                else:
+                    # give the stream name
+                    await self.change_presence(game=discord.Game(type=1, name=info['stream']['channel']['status'], url='https://twitch.tv/uomesports'))
+            except:
+                await self.change_presence(game=discord.Game(type=0, name='type {}help for the list of commands'.format(self.command_prefix)))
+            await asyncio.sleep(60)
         
     # check if message is a PM - terms and conditions
     async def accept_terms(self, member, message_content_lower):
