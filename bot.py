@@ -27,6 +27,10 @@ from overwatch_api.constants import *
 from urllib.request import urlopen
 from urllib.error import URLError
 
+def log(message):
+    ts = datetime.now().strftime('%Y-%m-%d %H:%M')
+    print('[{0}]: {1}'.format(ts, message))
+
 # this is a zero width seperator
 zero_seperator = '​'
 
@@ -42,10 +46,10 @@ if len(argv) == 2:
     if argv[1].endswith('.cfg') and argv[1] in listdir():
         config.read(argv[1])
     else:
-        print('Invalid config file {}'.format(argv[1]))
+        log('Invalid config file {}'.format(argv[1]))
         exit()
 else:
-    print('Please specify a config file, correct usage is python3 bot.py config.cfg')
+    log('Please specify a config file, correct usage is python3 bot.py config.cfg')
     exit()
 
 # read in from the configuration file
@@ -110,41 +114,39 @@ class Societybot(discord.Client):
         try:
             return await super().send_message(destination, content)
         except Exception as ex:
-            print(ex)
+            log(ex)
 
     # safely send a file
     async def safe_send_file(self, destination, fp, content=None):
         try:
             return await super().send_file(destination, fp, content)
         except Exception as ex:
-            print(ex)
+            log(ex)
 
     # safely delete a message
     async def safe_delete_message(self, message):
         try:
             await super().delete_message(message)
         except Exception as ex:
-            print(ex)
+            log(ex)
 
     # safely add a reaction
     async def safe_add_reaction(self, message, emoji):
         try:
             await super().add_reaction(message, emoji)
         except Exception as ex:
-            print(ex)
+            log(ex)
 
     # EVENTS
         
     # output to terminal if the bot successfully logs in
     async def on_ready(self):
         # output information about the bot's login
-        print('Logged in as')
-        print(self.user)
-        print(self.user.id)
-        print('------')
+        log('Logged in as {0} ({1})'.format(self.user, self.user.id))
+        log('START INIT')
         
         # get the list of commands and committee-only-commands
-        print('Producing the command lists')
+        log('Producing the command lists')
         self.commands = []
         self.committee_commands = []
         for att in dir(self):
@@ -156,7 +158,7 @@ class Societybot(discord.Client):
                     self.commands.append(att)
 
         # read server variable ids from the config file and intialise them as global variables
-        print('Initialising server variables')
+        log('Initialising server variables')
         self.server = discord.utils.get(self.servers, id=config.get('general', 'server_id'))
         
         self.member_role = discord.utils.get(self.server.roles, id=config.get('roles', 'member_id'))
@@ -171,15 +173,15 @@ class Societybot(discord.Client):
         self.moderation_channel = discord.utils.get(self.server.channels, id=config.get('channels', 'moderation_id'))
 
         # starting the twitch integration
-        print('Starting twitch integration')
+        log('Starting twitch integration')
         asyncio.ensure_future(self.check_stream())
 
         # change the nickname of the bot to its name
-        print('Changing nickname to {}'.format(bot_name))
+        log('Changing nickname to {}'.format(bot_name))
         await self.change_nickname(self.server.get_member(self.user.id), bot_name)
 
         # initialise the members dictionary and read from the file
-        print('Reading members in from file')
+        log('Reading members in from file')
         self.members = dict()
         if filename in listdir():
             with open(filename, mode='r', encoding='utf-8') as f:
@@ -189,11 +191,11 @@ class Societybot(discord.Client):
                     self.members[id] = data.split(',')
         else:
             # make an empty file if it doesn't exist
-            print('Member file doesn\'t exist, making one now')
+            log('Member file doesn\'t exist, making one now')
             self.write_members()
 
         # check for consistency with the current list of members
-        print('Checking consistency with current members')
+        log('Checking consistency with current members')
         members = self.server.members
         for member in members:
             id = member.id
@@ -212,19 +214,19 @@ class Societybot(discord.Client):
                 await self.send_terms(member)
 
         # writing to the file
-        print('Writing to the members file')
+        log('Writing to the members file')
         self.write_members()
 
         # process the unbans
         asyncio.ensure_future(self.process_unbans())
 
         # backup the members file
-        print('Backing up the current members file')
+        log('Backing up the current members file')
         asyncio.ensure_future(backup_members())
 
         # ready to go!
-        print('Ready to go!')
-        print('------')
+        log('Ready to go!')
+        log('------')
 
     # check the contents of the message
     async def on_message(self, message):
@@ -277,7 +279,7 @@ class Societybot(discord.Client):
         # wait until the bot is ready
         await self.wait_until_ready()
         
-        print('Member join: {}({})'.format(str(member), member.id))
+        log('Member join: {}({})'.format(str(member), member.id))
         id = member.id
         await self.safe_send_message(member, 'Welcome to the {} discord server!'.format(society_name))
         if id in self.members:
@@ -349,7 +351,7 @@ class Societybot(discord.Client):
             async def sub_wrapper(self, *args, **kwargs):
                 channel = kwargs['channel']
                 member = kwargs['member']
-                print('{}{} in #{} by {}'.format(self.command_prefix, func.__name__, channel, member))
+                log('{}{} in #{} by {}'.format(self.command_prefix, func.__name__, channel, member))
                 try:
                     return await func(self, *args, **kwargs)
                 except UsageException:
@@ -377,13 +379,13 @@ class Societybot(discord.Client):
     async def accept_terms(self, member, message_content_lower):
         if message_content_lower.startswith('yes'):
             # user is a member
-            print('{} is now a member'.format(str(member)))
+            log('{} is now a member'.format(str(member)))
             await self.safe_send_message(member, 'Member role has been added')
             self.members[member.id][1] = 'member'
             await self.add_roles(member, self.member_role)
         elif message_content_lower.startswith('no'):
             # user is a guest
-            print('{} is now a guest'.format(str(member)))
+            log('{} is now a guest'.format(str(member)))
             await self.safe_send_message(member, 'Guest role has been added')
             self.members[member.id][1] = 'guest'
             await self.add_roles(member, self.guest_role)
@@ -427,7 +429,7 @@ class Societybot(discord.Client):
     # process the unbans
     async def process_unbans(self):
         while True:
-            print('Processing the unbans')
+            log('Processing the unbans')
             for id in self.members:
                 if self.members[id][7] not in ['', 'never']:
                     date = datetime.strptime(self.members[id][7], '%Y-%m-%d %H:%M')
@@ -469,8 +471,8 @@ class Societybot(discord.Client):
     async def restart(self, *args, **kwargs):
         channel = kwargs['channel']
         await self.safe_send_message(channel, 'Restarting.')
-        print('Restarting the bot.')
-        print('------')
+        log('Restarting the bot.')
+        log('------')
         system('python3 {}'.format(' '.join(argv)))
         exit()
 
