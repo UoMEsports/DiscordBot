@@ -216,9 +216,7 @@ class Societybot(discord.Client):
                 if sreader:
                     self.members = {}
                     for line in sreader:
-                        strikes[line[0]] = line[1:]
-
-                    return strikes
+                        self.members[line[0]] = line[1:]
                 else:
                     # strikes file is empty
                     self.members = {}
@@ -272,7 +270,7 @@ class Societybot(discord.Client):
             message_content = message.content.strip()
             message_content_lower = message_content.lower()
             
-            if message.channel.is_private:
+            if isinstance(message.channel, discord.GuildChannel):
                 member = self.guild.get_member(message.author.id)
                 if self.member_role not in member.roles and self.guest_role not in member.roles:
                     await self.accept_terms(member, message_content_lower)
@@ -343,7 +341,7 @@ class Societybot(discord.Client):
     # confirm a command
     async def confirm(self, member, prompt):
         def check(msg):
-            return msg.content.lower() in ['yes', 'no'] and author=member and channel=sent.channel
+            return msg.content.lower() in ['yes', 'no'] and author == member and channel == sent.channel
         
         sent = await safe_send_message(member, 'Confirm: `{}` (`yes` or `no`)'.format(prompt))
         response = await self.wait_for('message', check=check)
@@ -381,7 +379,7 @@ class Societybot(discord.Client):
     # change the currently playing game if the society twitch account is streaming
     async def check_stream(self):
         while True:
-            url = 'https://api.twitch.tv/kraken/streams/{}?client_id={}'.format(twitch_name, twitch_client_id)
+            API_URL = 'https://api.twitch.tv/kraken/streams/{}?client_id={}'.format(twitch_name, twitch_client_id)
             try:
                 # check if the stram is live
                 async with aiohttp.ClientSession() as session:
@@ -489,7 +487,7 @@ class Societybot(discord.Client):
             await safe_send_message(channel, '\n'.join(responses))
     
     # restart the bot
-    @command(description='Restart the bot', admin_only=True)
+    @command(committee_only=True)
     async def restart(self, member, *args):
         await safe_send_message(member, 'Restarting.')
         print('Restarting the bot.')
@@ -688,13 +686,13 @@ class Societybot(discord.Client):
                     self.members[id][3] = reason
                     await safe_send_message(member, 'You have been given a first strike for `{}`. Please follow the rules.'.format(reason))
                     await safe_send_message(self.moderation_channel, '{} has been given a first strike for `{}`.'.format(str(member), reason))
-                    await member.add_remove_roles[self.first_strike_role], self.strike_roles)
+                    await member.add_remove_roles([self.first_strike_role], self.strike_roles)
                 elif self.members[id][2] == '1':
                     self.members[id][2] = '2'
                     self.members[id][4] = reason
                     await safe_send_message(member, 'You have been given a second strike for `{}`. 1 more strike and you will be given a 7-day ban from the guild. Please follow the rules.'.format(reason))
                     await safe_send_message(self.moderation_channel, '{} has been given a second strike for `{}`.'.format(str(member), reason))
-                    await member.add_remove_roles[self.second_strike_role], self.strike_roles)
+                    await member.add_remove_roles([self.second_strike_role], self.strike_roles)
                 elif self.members[id][2] == '2':
                     if await self.confirm(message.author, 'Give 7-day ban to {}'.format(str(member))):
                         self.members[id][2] = '3'
@@ -734,12 +732,12 @@ class Societybot(discord.Client):
                 elif self.members[id][2] == '2':
                     self.members[id][2] = '1'
                     self.members[id][4] = ''
-                    await member.add_remove_roles[self.first_strike_role], self.strike_roles)
+                    await member.add_remove_roles([self.first_strike_role], self.strike_roles)
                     await safe_send_message(self.moderation_channel, '{}\'s second strike has been removed.'.format(str(member)))
                 else:
                     self.members[id][2] = '2'
                     self.members[id][5] = ''
-                    await member.add_remove_roles[self.second_strike_role], self.strike_roles)
+                    await member.add_remove_roles([self.second_strike_role], self.strike_roles)
                     await safe_send_message(self.moderation_channel, '{}\'s third strike has been removed.'.format(str(member)))
             write_strikes(self.members)
         else:
@@ -772,13 +770,13 @@ class Societybot(discord.Client):
                 if self.member_role in member.roles:
                     return await safe_send_message(channel, 'You already have the `member` role')
                 else:
-                    await member.add_remove_roles[self.member_role], [self.guest_role])
+                    await member.add_remove_roles([self.member_role], [self.guest_role])
                     await safe_send_message(channel, 'You now have the `member` role')
             elif role == 'guest':
                 if self.guest_role in member.roles:
                     return await safe_send_message(channel, 'You already have the `guest` role')
                 else:
-                    await member.add_remove_roles[self.guest_role], [self.member_role])
+                    await member.add_remove_roles([self.guest_role], [self.member_role])
                     await safe_send_message(channel, 'You now have the `guest` role')
             else:
                 return await safe_send_message(channel, 'Didn\'t recognise `{}` role'.format(args[0]))
