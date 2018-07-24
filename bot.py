@@ -124,12 +124,21 @@ async def add_remove_roles(member, add, remove):
     # edit the member's roles
     await member.edit(roles=roles)
 
-# safely send a message
+# SAFE COROUTINES
+
+# send a message
 async def safe_send_message(destination, content=None, embed=None, file=None):
     try:
         return await destination.send(content=content, embed=embed, file=file)
     except Exception as ex:
         log(ex)
+        
+# delete a message
+async def safe_delete_message(message):
+    try:
+        return await message.delete()
+    except Exception as ex:
+        return log('Failed to delete message: {}'.format(ex))
 
 # the societybot class
 class Societybot(discord.Client):
@@ -140,15 +149,6 @@ class Societybot(discord.Client):
 
         # run the bot
         super().run(config.get('general', 'token'))
-
-    # SAFE COROUTINES
-
-    # safely delete a message
-    async def safe_delete_message(self, message):
-        try:
-            await super().delete_message(message)
-        except Exception as ex:
-            log(ex)
 
     # EVENTS
         
@@ -418,7 +418,7 @@ class Societybot(discord.Client):
             cmd = getattr(self, command, None)
             await cmd(*args, **kwargs)
         elif channel not in [self.command_channel, self.moderation_channel]:
-            await self.safe_delete_message(message)
+            await safe_delete_message(message)
             if command in self.committee_commands and self.committee_role in member.roles:
                 await safe_send_message(self.moderation_channel, '{} use committee commands here.'.format(member.mention))
             else:
