@@ -100,7 +100,7 @@ async def backup_members():
 
 # write strikes to file
 def write_strikes(strikes):
-    with open('strikes.csv', 'w', newline='', encoding='utf-8') as f:
+    with open(filename, 'w', newline='', encoding='utf-8') as f:
         swriter = writer(f, delimiter=',', quotechar='\'')
 
         for id in strikes:
@@ -125,9 +125,9 @@ async def add_remove_roles(member, add, remove):
     await member.edit(roles=roles)
 
 # safely send a message
-async def safe_send_message(destination, content):
+async def safe_send_message(destination, content=None, embed=None, file=None):
     try:
-        return await destination.send_message(content)
+        return await destination.send(content=content, embed=embed, file=file)
     except Exception as ex:
         log(ex)
 
@@ -143,24 +143,10 @@ class Societybot(discord.Client):
 
     # SAFE COROUTINES
 
-    # safely send a file
-    async def safe_send_file(self, destination, fp, content=None):
-        try:
-            return await super().send_file(destination, fp, content)
-        except Exception as ex:
-            log(ex)
-
     # safely delete a message
     async def safe_delete_message(self, message):
         try:
             await super().delete_message(message)
-        except Exception as ex:
-            log(ex)
-
-    # safely add a reaction
-    async def safe_add_reaction(self, message, emoji):
-        try:
-            await super().add_reaction(message, emoji)
         except Exception as ex:
             log(ex)
 
@@ -169,7 +155,7 @@ class Societybot(discord.Client):
     # output to terminal if the bot successfully logs in
     async def on_ready(self):
         # output information about the bot's login
-        log('Logged in as {0} ({1})'.format(self.user, self.user.id))
+        log('Logged in as {0} ({0.id})'.format(self.user))
         log('START INIT')
         
         # get the list of commands and committee-only-commands
@@ -210,7 +196,7 @@ class Societybot(discord.Client):
         # initialise the members dictionary and read from the file
         log('Reading members in from file')
         try:
-            with open('strikes.csv', 'r', newline='', encoding='utf-8') as f:
+            with open(filename, 'r', newline='', encoding='utf-8') as f:
                 sreader = reader(f, delimiter=',', quotechar='\'')
 
                 if sreader:
@@ -270,7 +256,7 @@ class Societybot(discord.Client):
             message_content = message.content.strip()
             message_content_lower = message_content.lower()
             
-            if isinstance(message.channel, discord.GuildChannel):
+            if isinstance(message.channel, discord.abc.GuildChannel):
                 member = self.guild.get_member(message.author.id)
                 if self.member_role not in member.roles and self.guest_role not in member.roles:
                     await self.accept_terms(member, message_content_lower)
