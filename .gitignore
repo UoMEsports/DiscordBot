@@ -2,4 +2,4 @@
 
 !*.py
 !empty.cfg
-!*.txt
+!requirements.txt

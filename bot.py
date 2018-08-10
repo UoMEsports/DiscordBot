@@ -1,113 +1,36 @@
 # -*- coding: utf-8 -*-
 
-'''
-SocietyBot
-Christian Moulsdale and Tom Mewett, 2017
-'''
-
 import asyncio
-import aiohttp
-import discord
-import json
-import smtplib
 
+from aiohttp import ClientSession
 from configparser import ConfigParser
 from csv import reader, writer
 from datetime import datetime, timedelta
+from discord import Client, Embed, File, Game, Streaming
+from discord.abc import PrivateChannel
+from discord.utils import find
 from functools import wraps
-from os import listdir, system
-from sys import argv
+from io import BytesIO
 
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
+# STUFF
 
-from overwatch_api.core import AsyncOWAPI
-from overwatch_api.constants import *
+# zero width joiner
+zwj = '\u200d'
 
-from urllib.request import urlopen
-from urllib.error import URLError
+# incorrect usage error
+class UsageException(Exception):
+    def __init__(self, value=None):
+        self.value = value
+
+# UTILITY
 
 def log(message):
-    ts = datetime.now().strftime('%Y-%m-%d %H:%M')
-    print('[{0}]: {1}'.format(ts, message))
+    with open('out.log', 'a') as f:
+        f.write('[{}]: {}\n'.format(datetime.now().strftime('%Y-%m-%d %H:%M'),
+                                    message))
 
-# this is a zero width seperator
-zero_seperator = '​'
-
-# incorrect usage exception
-class UsageException(Exception):
-    pass
-
-# initialise the configuration file
-config = ConfigParser()
-
-# check if valid arguments have been given
-if len(argv) == 2:
-    if argv[1].endswith('.cfg') and argv[1] in listdir():
-        config.read(argv[1])
-    else:
-        log('Invalid config file {}'.format(argv[1]))
-        exit()
-else:
-    log('Please specify a config file, correct usage is python3 bot.py config.cfg')
-    exit()
-
-# read in from the configuration file
-role_name = config.get('names', 'role')
-society_name = config.get('names', 'society')
-bot_name = config.get('names', 'bot')
-
-# email shit
-filename = '{}.csv'.format(bot_name)
-fromaddr = config.get('email', 'fromaddr')
-password = config.get('email', 'password')
-toaddr = config.get('email', 'toaddr')
-
-# twitch shit
-twitch_name = config.get('twitch', 'name')
-twitch_client_id = config.get('twitch', 'client_id')
-
-# backup the members file
-async def backup_members():
-    while True:
-        msg = MIMEMultipart()
-
-        msg['From'] = fromaddr
-        msg['To'] = toaddr
-        msg['Subject'] = 'Backup of {} {}'.format(filename, datetime.now().strftime('%Y-%m-%d %H:%M'))
-
-        attachment = open(filename, 'rb')
-
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload((attachment).read())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', 'attachment; filename={}'.format(filename))
-        msg.attach(part)
-
-        guild = smtplib.SMTP('smtp.gmail.com', 587)
-        guild.starttls()
-        guild.login(fromaddr, password)
-        text = msg.as_string()
-        guild.sendmail(fromaddr, toaddr, text)
-        guild.quit()
-
-        # delete junk
-        del msg, attachment, part, text
-
-        # wait 1 day
-        await asyncio.sleep(86400)
-
-# write strikes to file
-def write_strikes(strikes):
-    with open(filename, 'w', newline='', encoding='utf-8') as f:
-        swriter = writer(f, delimiter=',', quotechar='\'')
-
-        for id in strikes:
-            swriter.writerow([id] + strikes[id])
-
-# add and remove roles from a member
-async def add_remove_roles(member, add, remove):
+# edit a member's roles
+async def edit_roles(member, add=[], remove=[]):
     # get the list of the member's current roles
     roles = member.roles
 
@@ -124,128 +47,229 @@ async def add_remove_roles(member, add, remove):
     # edit the member's roles
     await member.edit(roles=roles)
 
-# SAFE COROUTINES
-
-# send a message
-async def safe_send_message(destination, content=None, embed=None, file=None):
-    try:
-        return await destination.send(content=content, embed=embed, file=file)
-    except Exception as ex:
-        log(ex)
-        
-# delete a message
-async def safe_delete_message(message):
-    try:
-        return await message.delete()
-    except Exception as ex:
-        return log('Failed to delete message: {}'.format(ex))
-
-# the societybot class
-class Societybot(discord.Client):
+# the bot class
+class Bot(Client):
     # initialise the bot
     def __init__(self):
         super().__init__()
-        self.command_prefix = config.get('general', 'command_prefix')
 
-        # run the bot
-        super().run(config.get('general', 'token'))
+        # open the config file
+        self.config = ConfigParser()
+        self.config.read('test.cfg')
+        
+        # run the bot using the token from the config file
+        super().run(self.config.get('general', 'token'))
+
+    # UTILITIES
+
+    # replace a command prefix token with the command prefix
+    def rcpfx(self, text):
+        return text.replace('%CPFX%', self.command_prefix)
+        
+    # process the command in a DM
+    async def process_commands(self, message, member, content):
+        command, *args = content.split()
+        command = command.replace(self.command_prefix, '', 1).lower()
+
+        if command in self.commands and (not self.commands[command]['admin_only'] or self.admin_role in member.roles):
+            return await self.commands[command]['cmd'](member, *args)
+        else:
+            return await member.send('Command "{0}{1}" not found. Use "{0}help" to get the list of commands'.format(self.command_prefix, command))
+
+    # WRAPPERS
+
+    # event wrapper
+    def event():
+        def wrapper(func):
+            func.bot_event = True
+            
+            @wraps(func)
+            async def sub_wrapper(self, *args, **kwargs):
+                try:
+                    return await func(self, *args, **kwargs)
+                except Exception as ex:
+                    err = 'Unhandled {} in event {}: {}'.format(ex.__class__.__name__,
+                                                                func.__name__,
+                                                                ex)
+                    log(err)
+                    return self.admin_channel.send(err)
+                    
+            return sub_wrapper
+        return wrapper
+
+    # command wrapper
+    def command(description, usage='', admin_only=False, category='general'):
+        def wrapper(func):
+            func.bot_command = True
+            func.description = description
+            func.usage = usage
+            func.admin_only = admin_only
+            func.category = category
+            
+            @wraps(func)
+            async def sub_wrapper(self, member, *args):
+                try:
+                    response = await func(self, member, *args)
+                except UsageException as ex:
+                    response = 'Correct usage is "{}{} {}"{}'.format(self.command_prefix,
+                                                                     func.__name__,
+                                                                     usage,
+                                                                     '\n{}'.format(ex.value) if ex.value else '')
+                except Exception as ex:
+                    # unhandled exception
+                    err = 'Unhandled {} in command {}{} by {}: {}'.format(ex.__class__.__name__,
+                                                                          self.command_prefix,
+                                                                          func.__name__,
+                                                                          member,
+                                                                          ex)
+                    log(err)
+                    await self.admin_channel.send(err)
+                    response = 'Sorry, that command failed.'
+                
+                if response:
+                    if isinstance(response, Embed):
+                        return await member.send(embed=response)
+                    else:
+                        return await member.send(response)
+                    
+            return sub_wrapper
+        return wrapper
+
+    # process wrapper
+    def process(period=60., retry=True):
+        def wrapper(func):
+            func.bot_process = True
+            
+            @wraps(func)
+            async def sub_wrapper(self, **kwargs):
+                # start the process
+                kwargs['state'] = 'setup'
+                try:
+                    kwargs = await func(self, **kwargs)
+                except Exception as ex:
+                    err = 'Unhandled {} while starting up process {}: {}'.format(ex.__class__.__name__,
+                                                                                 func.__name__,
+                                                                                 ex)
+                    log(err)
+                    return await self.admin_channel.send(err)
+                # run the process
+                while kwargs['state'] == 'run':
+                    try:
+                        kwargs = await func(self, **kwargs)
+                    except Exception as ex:
+                        err = 'Unhandled {} in process {}: {}'.format(ex.__class__.__name__,
+                                                                      func.__name__,
+                                                                      ex)
+                        log(err)
+                        await self.admin_channel.send(err)
+                        if not retry:
+                            kwargs['continue'] = 'end'
+
+                    await asyncio.sleep(period)
+
+                # finish the process
+                try:
+                    return await func(self, **kwargs)
+                except Exception as ex:
+                    err = 'Unhandled {} while shutting down process {}: {}'.format(ex.__class__.__name__,
+                                                                                   func.__name__,
+                                                                                   ex)
+                    log(err)
+                    return await self.admin_channel.send(err)
+                
+            return sub_wrapper
+        return wrapper
+
+    # EMBEDS
+
+    # command embed
+    def cmd_embed(self, cmd):
+        embed = Embed(title='{}{}'.format(self.command_prefix, cmd.__name__),
+                      description='{}\nUsage: {}{} {}'.format(cmd.description, self.command_prefix, cmd.__name__, cmd.usage),
+                      color=0xb72025 if cmd.admin_only else 0x00607d)
+        embed.set_author(name='Esports Bot')
+        if cmd.admin_only:
+            embed.set_footer(text='Admin-only command.')
+
+        return embed
 
     # EVENTS
         
     # output to terminal if the bot successfully logs in
+    @event()
     async def on_ready(self):
         # output information about the bot's login
-        log('Logged in as {0} ({0.id})'.format(self.user))
-        log('START INIT')
-        
-        # get the list of commands and committee-only-commands
+        log('Logged in as {0}, {0.id}'.format(self.user))
+        log('------')
+
+        # command prefix
+        self.command_prefix = self.config.get('general', 'command_prefix')
+
+        self.name = self.config.get('general', 'name')
+
+        # produce the list of commands
         log('Producing the command lists')
-        self.commands = []
-        self.committee_commands = []
+        self.commands = {}
         for att in dir(self):
             attr = getattr(self, att, None)
-            if hasattr(attr, 'is_command'):
-                if attr.is_committee_only:
-                    self.committee_commands.append(att)
-                else:
-                    self.commands.append(att)
+            if hasattr(attr, 'bot_command'):
+                self.commands[att] = {'cmd': attr, 'admin_only': attr.admin_only, 'embed': self.cmd_embed(attr)}
 
         # read guild variable ids from the config file and intialise them as global variables
-        log('Initialising guild variables')
-        self.guild = discord.utils.get(self.guilds, id=int(config.get('general', 'guild_id')))
-        
-        self.member_role = discord.utils.get(self.guild.roles, id=int(config.get('roles', 'member_id')))
-        self.guest_role = discord.utils.get(self.guild.roles, id=int(config.get('roles', 'guest_id')))
-        self.committee_role = discord.utils.get(self.guild.roles, id=int(config.get('roles', 'committee_id')))
-        self.first_strike_role = discord.utils.get(self.guild.roles, id=int(config.get('roles', 'first_strike_id')))
-        self.second_strike_role = discord.utils.get(self.guild.roles, id=int(config.get('roles', 'second_strike_id')))
-        self.third_strike_role = discord.utils.get(self.guild.roles, id=int(config.get('roles', 'third_strike_id')))
-        self.strike_roles = [self.first_strike_role, self.second_strike_role, self.third_strike_role]
-        
-        self.command_channel = discord.utils.get(self.guild.channels, id=int(config.get('channels', 'command_id')))
-        self.moderation_channel = discord.utils.get(self.guild.channels, id=int(config.get('channels', 'moderation_id')))
+        log('Initialising the guild variables')
+        self.guild = self.get_guild(int(self.config.get('general', 'guild')))
 
-        # starting the twitch integration
-        log('Starting twitch integration')
-        asyncio.ensure_future(self.check_stream())
+        # channels
+        self.admin_channel = self.guild.get_channel(int(self.config.get('channels', 'admin')))
+
+        # roles
+        self.admin_role = find(lambda role: role.id == self.config.get('roles', 'admin'), self.guild.roles)
 
         # change the nickname of the bot to its name
-        log('Changing nickname to {}'.format(bot_name))
-        await self.guild.me.edit(nick=bot_name)
+        log('Changing nickname to {}'.format(self.name))
+        await self.guild.me.edit(nick=self.name)
 
-        # initialise the members dictionary and read from the file
-        log('Reading members in from file')
-        try:
-            with open(filename, 'r', newline='', encoding='utf-8') as f:
-                sreader = reader(f, delimiter=',', quotechar='\'')
+        # maintain the bots presence
+        log('Maintaining the bots presence')
+        asyncio.ensure_future(self.maintain_presence())
 
-                if sreader:
-                    self.members = {}
-                    for line in sreader:
-                        self.members[line[0]] = line[1:]
+        # generate the help text
+        log('Generating the help text')
+        self.help_embed = Embed(color=0x00607d)
+        self.help_embed.add_field(name='Commands',
+                                  value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if not self.commands[command]['admin_only']]))
+        self.help_embed.set_footer(text='Type "{}help command" to get its usage.'.format(self.command_prefix))
+        self.admin_embed = Embed(color=0xb72025)
+        self.admin_embed.add_field(name='Commands',
+                                   value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if not self.commands[command]['admin_only']]))
+        self.admin_embed.add_field(name='Admin-only commands',
+                                   value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if self.commands[command]['admin_only']]))
+        self.admin_embed.set_footer(text='Type "{}help command" to get its usage.'.format(self.command_prefix))
+        
+        # generate the game roles
+        log('Generating the game roles')
+        self.games = []
+        with open('games.txt', 'r') as f:
+            for line in f:
+                id = int(line.strip())
+
+                # check if role exists
+                if find(lambda role: role.id == id, self.guild.roles):
+                    self.games.append(id)
                 else:
-                    # strikes file is empty
-                    self.members = {}
-        except FileNotFoundError:
-            # file not found
-            print('Strikes file not found.')
-            self.members = {}
+                    # role doesn't exist
+                    log('Couldn\'t find role with ID {}'.format(id))
 
-        # check for consistency with the current list of members
-        log('Checking consistency with current members')
-        members = self.guild.members
-        for member in members:
-            id = member.id
-            if id not in self.members:
-                if self.member_role in member.roles:
-                    self.members[member.id] = [str(member), 'member', '0', '', '', '', '', '']
-                elif self.guest_role in member.roles:
-                    self.members[member.id] = [str(member), 'guest', '0', '', '', '', '', '']
-                else:
-                    self.members[member.id] = [str(member), '', '0', '', '', '', '', '']
-            else:
-                self.members[id][0] = str(member)
-
-            # send prompts to all members who don't currently have the member role
-            if self.member_role not in member.roles and self.guest_role not in member.roles and member != self.user:
-                await self.send_terms(member)
-
-        # writing to the file
-        log('Writing to the members file')
-        write_strikes(self.members)
-
-        # process the unbans
-        asyncio.ensure_future(self.process_unbans())
-
-        # backup the members file
-        log('Backing up the current members file')
-        asyncio.ensure_future(backup_members())
-
+        with open('games.txt', 'w') as f:
+            for id in self.games:
+                f.write('{}\n'.format(id))
+        
         # ready to go!
         log('Ready to go!')
         log('------')
-
+        
     # check the contents of the message
+    @event()
     async def on_message(self, message):
         # wait until the bot is ready
         await self.wait_until_ready()
@@ -253,524 +277,156 @@ class Societybot(discord.Client):
         # process responses if message isn't from user:
         if message.author != self.user:
             # get the message content in a managable format
-            message_content = message.content.strip()
-            message_content_lower = message_content.lower()
+            content = message.content.strip()
+
+            # get the member who sent the message
+            member = self.guild.get_member(message.author.id)
             
-            if isinstance(message.channel, discord.abc.GuildChannel):
-                member = self.guild.get_member(message.author.id)
-                if self.member_role not in member.roles and self.guest_role not in member.roles:
-                    await self.accept_terms(member, message_content_lower)
-            else:
-                if message_content.startswith(self.command_prefix):
-                    await self.process_commands(message, message_content)
-
-    # when a member updates their profile:
-    async def on_member_update(self, before, after):
-        # wait until the bot is ready
-        await self.wait_until_ready()
-        
-        if str(after) != str(before):
-            self.members[after.id][0] = str(after)
-        elif after.roles != before.roles:
-            id = after.id
-            old = self.members[id][1]
-            if self.member_role in after.roles:
-                self.members[id][1] = 'member'
-            elif self.guest_role in after.roles:
-                self.members[id][1] = 'guest'
-            else:
-                self.members[id][1] = ''
-                
-            if self.members[id][1] == old:
-                # no changes
-                return
-        else:
-            # no changes
-            return
-
-        # save the changes
-        write_strikes(self.members)
-
-    # when a member joins, send them a PM asking if they accept the terms and conditions
-    async def on_member_join(self, member):
-        # wait until the bot is ready
-        await self.wait_until_ready()
-        
-        log('Member join: {}({})'.format(str(member), member.id))
-        id = member.id
-        await safe_send_message(member, 'Welcome to the {} discord guild!'.format(society_name))
-        if id in self.members:
-            roles = []
-            role = self.members[id][1]
-            if role == 'member':
-                roles.append(self.member_role)
-            elif role == 'guest':
-                roles.append(self.guest_role)
-            else:
-                await self.send_terms(member)
-            strikes = self.members[id][2]
-            if strikes == '1':
-                roles.append(self.first_strike_role)
-            elif strikes == '2':
-                roles.append(self.second_strike_role)
-            elif strikes == '3':
-                roles.append(self.third_strike_role)
-                await safe_send_message(member, 'You are now on your third strike. 1 more strike and you will be permanently banned from the guild. Please follow the rules.')
-            await self.add_roles(member, *roles)
-        else:
-            self.members[id] = [str(member), '', '0', '', '', '', '', '']
-            await self.send_terms(member)
-            write_strikes(self.members)
-
-    # UTILITY
-
-    # confirm a command
-    async def confirm(self, member, prompt):
-        def check(msg):
-            return msg.content.lower() in ['yes', 'no'] and author == member and channel == sent.channel
-        
-        sent = await safe_send_message(member, 'Confirm: `{}` (`yes` or `no`)'.format(prompt))
-        response = await self.wait_for('message', check=check)
-        if response.content.lower() == 'yes':
-            return True
-        else:
-            return False
-
-    # write the members to the csv file
-    def write_members(self):
-        with open(filename, mode='w', encoding='utf-8') as f:
-            f.write('User ID,Username,Role,Number of strikes,Reason 1,Reason 2,Reason 3,Reason 4,Unban date\n')
-            for id in self.members:
-                f.write('{},{}\n'.format(id, ','.join(self.members[id])))
-                
-    # esborts command wrapper
-    def command(usage='', committee_only=False):
-        def wrapper(func):
-            func.is_command = True
-            func.is_committee_only = committee_only
-            func.usage = usage
-            
-            @wraps(func)
-            async def sub_wrapper(self, *args, **kwargs):
-                channel = kwargs['channel']
-                member = kwargs['member']
-                log('{}{} in #{} by {}'.format(self.command_prefix, func.__name__, channel, member))
-                try:
-                    return await func(self, *args, **kwargs)
-                except UsageException:
-                    return await safe_send_message(channel, 'Correct usage is `{}{} {}`'.format(self.command_prefix, func.__name__, usage))
-            return sub_wrapper
-        return wrapper
-
-    # change the currently playing game if the society twitch account is streaming
-    async def check_stream(self):
-        while True:
-            API_URL = 'https://api.twitch.tv/kraken/streams/{}?client_id={}'.format(twitch_name, twitch_client_id)
-            try:
-                # check if the stram is live
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(API_URL) as resp:
-                        info = await resp.json()
-                if info['stream'] == None:
-                    # nothing is streaming
-                    await self.change_presence(activity=discord.Game('type {}help for the list of commands'.format(self.command_prefix)))
+            # check whether a command has been given
+            if content.startswith(self.command_prefix):
+                # check whether it was given correctly by DM
+                if isinstance(message.channel, PrivateChannel):
+                    return await self.process_commands(message, member, content)
                 else:
-                    # give the stream name
-                    await self.change_presence(activity=discord.Streaming(name=info['stream']['channel']['status'], details=info['stream']['channel']['game'], url='https://twitch.tv/uomesports'))
-            except:
-                await self.change_presence(game=discord.Game(type=0, name='type {}help for the list of commands'.format(self.command_prefix)))
-            await asyncio.sleep(60)
-        
-    # check if message is a PM - terms and conditions
-    async def accept_terms(self, member, message_content_lower):
-        if message_content_lower.startswith('yes'):
-            # user is a member
-            log('{} is now a member'.format(str(member)))
-            await safe_send_message(member, 'Member role has been added')
-            self.members[member.id][1] = 'member'
-            await self.add_roles(member, self.member_role)
-        elif message_content_lower.startswith('no'):
-            # user is a guest
-            log('{} is now a guest'.format(str(member)))
-            await safe_send_message(member, 'Guest role has been added')
-            self.members[member.id][1] = 'guest'
-            await self.add_roles(member, self.guest_role)
-        else:
-            # invalid response receieved
-            return
+                    # delete message if in guild channel and remind user to use DM's
+                    await delete_message(message)
+                    return await member.send('Use commands here.')
 
-        # write to the file
-        write_strikes(self.members)
-        
-    # check for a command
-    async def process_commands(self, message, message_content):
-        command, *args = message_content.split()
-        command = command.replace(self.command_prefix, '', 1).lower()
-        channel = message.channel
-        member = self.guild.get_member(message.author.id)
-        
-        if channel is self.command_channel and command in self.commands or channel is self.moderation_channel and command in (self.commands + self.committee_commands):
-            kwargs = dict()
-            kwargs['member'] = member
-            kwargs['message'] = message
-            kwargs['channel'] = channel
-            
-            cmd = getattr(self, command, None)
-            await cmd(*args, **kwargs)
-        elif channel not in [self.command_channel, self.moderation_channel]:
-            await safe_delete_message(message)
-            if command in self.committee_commands and self.committee_role in member.roles:
-                await safe_send_message(self.moderation_channel, '{} use committee commands here.'.format(member.mention))
-            else:
-                await safe_send_message(self.command_channel, '{} use commands here.'.format(member.mention))
-        else:
-            await safe_send_message(channel, 'Command `{0}{1}` not found. Use `{0}help` to get the list of commands'.format(self.command_prefix, command))
-            if command in self.committee_commands and self.committee_role in member.roles:
-                await safe_send_message(self.moderation_channel, '{} use committee commands here.'.format(member.mention))
-
-    # send the terms and conditions prompts to a member
-    async def send_terms(self, member):
-        await safe_send_message(member, 'Are you a member of the {}? (`yes` or `no`) You can be in this guild without being a member as a guest.'.format(society_name))
-
-    # process the unbans
-    async def process_unbans(self):
-        while True:
-            log('Processing the unbans')
-            for id in self.members:
-                if self.members[id][7] not in ['', 'never']:
-                    date = datetime.strptime(self.members[id][7], '%Y-%m-%d %H:%M')
-                    if datetime.now() > date:
-                        self.members[id][7] = ''
-                        await self.guild.unban(discord.User(id=id))
-                        await safe_send_message(self.moderation_channel, '{} has been unbanned'.format(self.members[id][0]))
-            write_strikes(self.members)
-            
-            # wait 1 hour
-            await asyncio.sleep(3600)
-
-    # BOT COMMANDS
- 
-    # list the bot commands
-    @command(usage='[command(s)]')
-    async def help(self, *args, **kwargs):
-        channel = kwargs['channel']
-        member = kwargs['member']
-        # check if a command has been given to list the usage
-        if len(args) == 0:
-            response = '**{} commands**\n```\n!{}'.format(bot_name, ', !'.join(self.commands))
-            if channel is self.moderation_channel:
-                response += '\n```\n**Committee-only commands**\n```\n!{}'.format(', !'.join(self.committee_commands))
-            response += '\n```\nType `!help command` to get the usage of a command.'
-            await safe_send_message(channel, response)
-        else:
-            responses = []
-            for arg in args:
-                if channel is self.command_channel and arg.lower() in self.commands or channel is self.moderation_channel and arg.lower() in (self.commands + self.committee_commands):
-                    cmd = getattr(self, arg.lower())
-                    responses.append('Usage is `{}{} {}`.'.format(self.command_prefix, cmd.__name__, cmd.usage))
-                else:
-                    responses.append('Command `{}{}` not found.'.format(self.command_prefix, arg))
-            await safe_send_message(channel, '\n'.join(responses))
+    # PERIODIC COROUTINES
     
-    # restart the bot
-    @command(committee_only=True)
-    async def restart(self, member, *args):
-        await safe_send_message(member, 'Restarting.')
-        print('Restarting the bot.')
-        print('------')
-        await self.logout()
+    # maintain the bots presence on the server
+    @process()
+    async def maintain_presence(self, **kwargs):
+        if kwargs['state'] == 'setup':
+            # read in the stream
+            stream = self.config.get('general', 'stream')
+
+            # read in the default presence
+            kwargs['presence'] = self.config.get('general', 'presence')
+            
+            # the URLs
+            kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(stream)
+            kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=vnhejis97bfke371caeq7u8zn2li3u'.format(stream)
+
+            # set the bot to run
+            kwargs['state'] = 'run'
+        elif kwargs['state'] == 'run':
+            # check if the stram is live
+            async with ClientSession() as session:
+                async with session.get(kwargs['API_URL']) as resp:
+                    info = await resp.json()
+
+            if info['stream'] == None:
+                # nothing is streaming - use default presence
+                await self.change_presence(activity=Game(kwargs['presence']))
+            else:
+                # stream is live - use streaming presence
+                await self.change_presence(activity=Streaming(name=info['stream']['channel']['status'], details=info['stream']['channel']['game'], url=kwargs['stream_URL']))
+
+        return kwargs
+
+    # COMMANDS
+
+    # GENERAL COMMANDS
+    
+    # list the bot commands
+    @command(description='List the bot commands and their usage.', usage='[command]')
+    async def help(self, member, *args):
+        if len(args) == 0:
+            # give the correct version of the help text
+            if self.admin_role in member.roles:
+                return self.admin_embed
+            else:
+                return self.help_embed
+        elif len(args) == 1:
+            # find the command
+            command = args[0].lower().replace(self.command_prefix, '')
+            if command in self.commands and (not self.commands[command]['admin_only'] or self.admin_role in member.roles):
+                return self.commands[command]['embed']
+            else:
+                return 'Command {}{} not found.'.format(self.command_prefix, command)
+        else:
+            raise UsageException
+
+    # GAME ROLE COMMANDS
 
     # add game role
-    @command(usage='{}(s) | list'.format(role_name))
-    async def addrole(self, *args, **kwargs):
-        channel = kwargs['channel']
-        member = kwargs['member']
-        if len(args) != 0:
-            games = dict()
-            for role in self.guild.roles:
-                if role.name.startswith(zero_seperator):
-                    games[role.name.replace(zero_seperator, '').lower()] = role
-            if args[0].lower() == 'list':
-                response = 'The possible {} roles are: '.format(role_name)
-                items = []
-                for game in games:
-                    items.append('`{}`'.format(games[game].name))
-                response += ', '.join(items)
-                await safe_send_message(channel, response)
-            else:
-                responses = []
-                roles = []
-                for arg in args:
-                    game = arg.lower()
-                    if game in games:
-                        role = games[game]
-                        if role in member.roles:
-                            responses.append('You already have `{}` role'.format(role.name))
-                        else:
-                            roles.append(games[game])
-                            responses.append('Added `{}` role'.format(role.name))
-                    else:
-                        responses.append('Didn\'t recognise `{}` role '.format(arg))
-                await member.add_roles(*roles)
-                await safe_send_message(channel, '\n'.join(responses))
-        else:
+    @command(description='Add a game role.', usage='game')
+    async def addgame(self, member, *args):
+        if len(args) == 0:
             raise UsageException
+        else:
+            game = ' '.join(args)
+
+            role = find(lambda role: role.name.lower() == game.lower(), self.guild.roles)
+
+            if role:
+                # role exists
+                if role in member.roles:
+                    # member already has the role
+                    return 'You already have "{}" role.'.format(role.name)
+                else:
+                    # member doesn't have role
+                    await member.add_roles(*[role])
+                    return 'Added "{}" role.'.format(role.name)
+            else:
+                # role doesn't exist
+                return 'Didn\'t recognise "{}" role.'.format(game)
 
     # remove game role
-    @command(usage='{}(s) | list | all'.format(role_name))
-    async def removerole(self, *args, **kwargs):
-        channel = kwargs['channel']
-        member = kwargs['member']
-        if len(args) != 0:
-            games = dict()
-            for role in self.guild.roles:
-                if role.name.startswith(zero_seperator):
-                    games[role.name.replace(zero_seperator, '').lower()] = role
-            if args[0].lower() == 'list':
-                response = 'Your current {} roles are: '.format(role_name)
-                items = []
-                for game in games:
-                    role = games[game]
-                    if role in member.roles:
-                        items.append('`{}`'.format(role.name))
-                if len(items) == 0:
-                    await safe_send_message(channel, 'You currently have no {} roles. Add them using the `{}addrole` command.'.format(role_name, self.command_prefix))
+    @command(description='Remove a game role.', usage='games')
+    async def removegame(self, member, *args):
+        if len(args) == 0:
+            raise UsageException
+        else:
+            game = ' '.join(args)
+
+            role = find(lambda role: role.name.lower() == game.lower() and role.id in self.games, self.guild.roles)
+
+            if role:
+                # role exists
+                if role in member.roles:
+                    # member already has the role
+                    await member.remove_roles(*[role])
+                    return 'Removed "{}" role.'.format(role.name)
                 else:
-                    response += ', '.join(items)
-                    await safe_send_message(channel, response)
-            elif args[0].lower() == 'all':
-                responses = []
-                roles = []
-                for game in games:
-                    role = games[game]
-                    if role in member.roles:
-                        roles.append(role)
-                        responses.append('Removed `{}` role'.format(role.name))
-                if len(responses) != 0:
-                    await member.remove_roles(*roles)
-                    await safe_send_message(channel, '\n'.join(responses))
-                else:
-                    await safe_send_message(channel, 'You currently have no {} roles. Add them using the `{}addrole` command.'.format(role_nameself.command_prefix))
+                    # member doesn't have role
+                    return 'You don\'t have "{}" role.'.format(role.name)
             else:
-                responses = []
-                roles = []
-                for arg in args:
-                    game = arg.lower()
-                    if game in games:
-                        role = games[game]
-                        if role in member.roles:
-                            roles.append(role)
-                            responses.append('Removed `{}` role'.format(role.name))
-                        else:
-                            responses.append('You don\'t have `{}` role'.format(role.name))
-                    else:
-                        responses.append('Didn\'t recognise `{}` role'.format(game))
-                await member.remove_roles(*roles)
-                await safe_send_message(channel, '\n'.join(responses))
-        else:
-            raise UsageException
+                # role doesn't exist
+                return 'Didn\'t recognise "{}" role.'.format(game)
 
-    # list the members of a game role
-    @command(usage=role_name)
-    async def listrole(self, *args, **kwargs):
-        channel = kwargs['channel']
-        if len(args) == 1:
-            games = dict()
-            for role in self.guild.roles:
-                if role.name.startswith(zero_seperator):
-                    games[role.name.replace(zero_seperator, '').lower()] = role
-            game = args[0].lower()
-            all = []
-            online = []
-            if game in games:
-                role = games[game]
-                members = self.guild.members
-                for member in members:
-                    if role in member.roles:
-                        all.append(str(member))
-                        if str(member.status) in ['online', 'idle']:
-                            online.append(str(member))
-                if len(all) != 0:
-                    response = 'List of {} members with `{}` role:\n```\n{}\n```\n'.format(len(all), role.name, ', '.join(sorted(all, key=str.lower)))
-                    if len(online) != 0:
-                        response += 'List of {} online members with `{}` role:\n```\n{}\n```'.format(len(online), role.name, ', '.join(sorted(online, key=str.lower)))
-                    else:
-                        response += 'There are currently no online members with `{}` role'.format(role.name)
-                    await safe_send_message(channel, response)
-                else:
-                    await safe_send_message(channel, 'There are currently no members with `{0}` role. Add it using `{1}addrole {0}`'.format(role.name, self.command_prefix))
+    # list the game roles
+    @command(description='List the game roles.')
+    async def listgames(self, member, *args):
+        # get the list of roles
+        games = [role.name for role in self.guild.roles if role.id in self.games]
+
+        return 'The game roles are:\n{}'.format(', '.join(games))
+
+    # create a new game role
+    @command(description='Create a new game role.', usage='game', admin_only=True)
+    async def creategame(self, member, *args):
+        if len(args) == 0:
+            raise UsageException
+        else:
+            game = ' '.join(args)
+            
+            # check if role already exists
+            role = find(lambda role: role.name.lower() == game.lower(), self.guild.roles)
+
+            if role:
+                # role already exists
+                return '"{}" game already exists.'.format(self.games[args[0].lower()].name)
             else:
-                await safe_send_message(channel, 'Didn\'t recognise `{}` role.'.format(game))
-        else:
-            raise UsageException
+                # role doesn't exist
+                role = await self.guild.create_role(name=game)
+                self.games.append(role.id)
+                return 'Created "{}" game.'.format(game)
 
-    # create new game role
-    @command(usage=role_name, committee_only=True)
-    async def createrole(self, *args, **kwargs):
-        channel = kwargs['channel']
-        if len(args) == 1:
-            games = dict()
-            for role in self.guild.roles:
-                if role.name.startswith(zero_seperator):
-                    games[role.name.replace(zero_seperator, '').lower()] = role
-            if args[0].lower() not in games:
-                await self.guild.create_role(self.guild, name='{}{}'.format(zero_seperator, args[0]), mentionable=True, permissions=self.guild.default_role.permissions)
-                await safe_send_message(channel, 'Created `{}` {} role'.format(args[0], role_name))
-            else:
-                await safe_send_message(channel, '`{}` {} role already exists'.format(games[args[0].lower()].name, role_name))
-        else:
-            raise UsageException
-
-    # change Orisa's presence (game played)
-    @command(usage='presence', committee_only=True)
-    async def changepresence(self, *args, **kwargs):
-        channel = kwargs['channel']
-        if len(args) != 0:
-            presence = ' '.join(args)
-            await self.change_presence(activity=discord.Game(name=presence))
-            await safe_send_message(channel, 'Changed presence to `{}`.'.format(presence))
-        else:
-            raise UsageException
-
-    # get bnet stats for a user
-    @command(usage='battletag')
-    async def stats(self, *args, **kwargs):
-        channel = kwargs['channel']
-        if len(args) != 0:
-            client = AsyncOWAPI()
-            try:
-                data = await client.get_profile(args[0])
-            except asyncio.TimeoutError:
-                return await safe_send_message(channel, 'Timed out, :slight_frown:')
-            if data != {}:
-                try:
-                    SR = data['eu']['stats']['competitive']['overall_stats']['comprank']
-                    tier = data['eu']['stats']['competitive']['overall_stats']['tier']
-                    if SR == None:
-                        await safe_send_message(channel, '{} hasn\'t played comp this season'.format(args[0]))
-                    else:
-                        await safe_send_message(channel, '`{}: {}({})`'.format(args[0], tier, SR))
-                except KeyError:
-                    return await safe_send_message(channel, '{} has never played on EU, :slight_frown:'.format(args[0]))
-            else:
-                await safe_send_message(channel, 'Unable to find profile `{}`.'.format(args[0]))
-        else:
-            raise UsageException
-
-    # strike commands
-
-    # give a user a strike
-    @command(usage='@user reason', committee_only=True)
-    async def strike(self, *args, **kwargs):
-        message = kwargs['message']
-        if message.mentions != None and len(args) >= 2:
-            reason = ' '.join(args[1:])
-            for member in message.mentions:
-                id = member.id
-                if self.members[id][2] == '0':
-                    self.members[id][2] = '1'
-                    self.members[id][3] = reason
-                    await safe_send_message(member, 'You have been given a first strike for `{}`. Please follow the rules.'.format(reason))
-                    await safe_send_message(self.moderation_channel, '{} has been given a first strike for `{}`.'.format(str(member), reason))
-                    await member.add_remove_roles([self.first_strike_role], self.strike_roles)
-                elif self.members[id][2] == '1':
-                    self.members[id][2] = '2'
-                    self.members[id][4] = reason
-                    await safe_send_message(member, 'You have been given a second strike for `{}`. 1 more strike and you will be given a 7-day ban from the guild. Please follow the rules.'.format(reason))
-                    await safe_send_message(self.moderation_channel, '{} has been given a second strike for `{}`.'.format(str(member), reason))
-                    await member.add_remove_roles([self.second_strike_role], self.strike_roles)
-                elif self.members[id][2] == '2':
-                    if await self.confirm(message.author, 'Give 7-day ban to {}'.format(str(member))):
-                        self.members[id][2] = '3'
-                        self.members[id][5] = reason
-                        unban_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M')
-                        self.members[id][7] = unban_date
-                        await safe_send_message(member, 'You have been given a 7 day ban for `{}`. Your ban will expire at `{}`'.format(reason, unban_date))
-                        await safe_send_message(self.moderation_channel, '{} has been given a 7 day ban for `{}`.'.format(str(member), reason))
-                        await self.guild.ban(member)
-                else:
-                    if await self.confirm(message.author, 'Permanently ban {}'.format(str(member))):
-                        self.members[id][2] = '4'
-                        self.members[id][6] = reason
-                        self.members[id][7] = 'never'
-                        await safe_send_message(member, 'You have been permanently banned for `{}`.'.format(reason))
-                        await safe_send_message(self.moderation_channel, '{} has been permanently banned for `{}`.'.format(str(member), reason))
-                        await self.guild.ban(member)
-                        
-            write_strikes(self.members)
-        else:
-            raise UsageException
-
-    # remove a users strikes
-    @command(usage='@user', committee_only=True)
-    async def destrike(self, *args, **kwargs):
-        message = kwargs['message']
-        if message.mentions != None:
-            for member in message.mentions:
-                id = member.id
-                if self.members[id][2] == '0':
-                    await safe_send_message(self.moderation_channel, '{} has no strikes.'.format(str(member)))
-                elif self.members[id][2] == '1':
-                    self.members[id][2] = '0'
-                    self.members[id][3] = ''
-                    await self.remove_roles(member, *self.strike_roles)
-                    await safe_send_message(self.moderation_channel, '{}\'s first strike has been removed.'.format(str(member)))
-                elif self.members[id][2] == '2':
-                    self.members[id][2] = '1'
-                    self.members[id][4] = ''
-                    await member.add_remove_roles([self.first_strike_role], self.strike_roles)
-                    await safe_send_message(self.moderation_channel, '{}\'s second strike has been removed.'.format(str(member)))
-                else:
-                    self.members[id][2] = '2'
-                    self.members[id][5] = ''
-                    await member.add_remove_roles([self.second_strike_role], self.strike_roles)
-                    await safe_send_message(self.moderation_channel, '{}\'s third strike has been removed.'.format(str(member)))
-            write_strikes(self.members)
-        else:
-            raise UsageException
-
-    # view your own strikes
-    @command()
-    async def strikes(self, *args, **kwargs):
-        channel = kwargs['channel']
-        member = kwargs['member']
-        id = member.id
-        strikes = []
-        for i in range(4):
-            if self.members[id][i+3] != '':
-                strikes.append('Strike {}: `{}`'.format(i+1, self.members[id][i+3]))
-        if len(strikes) == 0:
-            await safe_send_message(member, 'You currently have no strikes.')
-        else:
-            await safe_send_message(member, 'You have the following {} strikes:\n{}'.format(len(strikes), '\n'.join(strikes)))
-        await safe_send_message(channel, 'PM\'d.')
-
-    # change your role
-    @command(usage='member | guest')
-    async def changerole(self, *args, **kwargs):
-        channel = kwargs['channel']
-        member = kwargs['member']
-        if len(args) == 1:
-            role = args[0].lower()
-            if role == 'member':
-                if self.member_role in member.roles:
-                    return await safe_send_message(channel, 'You already have the `member` role')
-                else:
-                    await member.add_remove_roles([self.member_role], [self.guest_role])
-                    await safe_send_message(channel, 'You now have the `member` role')
-            elif role == 'guest':
-                if self.guest_role in member.roles:
-                    return await safe_send_message(channel, 'You already have the `guest` role')
-                else:
-                    await member.add_remove_roles([self.guest_role], [self.member_role])
-                    await safe_send_message(channel, 'You now have the `guest` role')
-            else:
-                return await safe_send_message(channel, 'Didn\'t recognise `{}` role'.format(args[0]))
-
-            # update the members file
-            write_strikes(self.members)
-        else:
-            raise UsageException
+    @command(description='')
+    async def test(self, member, *args):
+        await None.send('Test')
         
 # start the bot
-Societybot()
+Bot()
