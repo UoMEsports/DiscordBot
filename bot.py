@@ -12,10 +12,7 @@ from discord.utils import find
 from functools import wraps
 from io import BytesIO
 
-# STUFF
-
-# zero width joiner
-zwj = '\u200d'
+# ERRORS
 
 # incorrect usage error
 class UsageError(Exception):
