@@ -7,7 +7,7 @@ from configparser import ConfigParser
 from csv import reader, writer
 from datetime import datetime, timedelta
 from discord import Client, Embed, File, Game, Streaming
-from discord.abc import PrivateChannel
+from discord.abc import GuildChannel
 from discord.utils import find
 from functools import wraps
 from io import BytesIO
@@ -18,8 +18,13 @@ from io import BytesIO
 zwj = '\u200d'
 
 # incorrect usage error
-class UsageException(Exception):
+class UsageError(Exception):
     def __init__(self, value=None):
+        self.value = value
+
+# command failed error
+class CommandError(Exception):
+    def __init__(self, value):
         self.value = value
 
 # UTILITY
@@ -55,10 +60,18 @@ class Bot(Client):
 
         # open the config file
         self.config = ConfigParser()
-        self.config.read('test.cfg')
-        
-        # run the bot using the token from the config file
-        super().run(self.config.get('general', 'token'))
+        self.config.read('config.cfg')
+
+        loop = asyncio.get_event_loop()
+
+        self.ready = asyncio.Event(loop=loop)        
+
+        try:
+            loop.run_until_complete(super().start(self.config.get('general', 'token')))
+        except KeyboardInterrupt:
+            loop.run_until_complete(super().logout())
+        finally:
+            loop.close()
 
     # UTILITIES
 
@@ -66,15 +79,22 @@ class Bot(Client):
     def rcpfx(self, text):
         return text.replace('%CPFX%', self.command_prefix)
         
-    # process the command in a DM
+    # process the command in a channel
     async def process_commands(self, message, member, content):
-        command, *args = content.split()
-        command = command.replace(self.command_prefix, '', 1).lower()
+        channel = message.channel
 
-        if command in self.commands and (not self.commands[command]['admin_only'] or self.admin_role in member.roles):
-            return await self.commands[command]['cmd'](member, *args)
+        if channel in [self.bot_channel, self.admin_channel]:
+            command, *args = content.split()
+            command = command.replace(self.command_prefix, '', 1).lower()
+
+            if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
+                return await self.commands[command]['cmd'](*args, member=member, channel=channel)
+            else:
+                return await channel.send(embed=self.response_embed('Command "{0}{1}" not found. Use "{0}help" to get the list of commands.'.format(self.command_prefix, command), False))
         else:
-            return await member.send('Command "{0}{1}" not found. Use "{0}help" to get the list of commands'.format(self.command_prefix, command))
+            if isinstance(channel, GuildChannel):
+                await message.delete()
+            return await self.bot_channel.send(member.mention, embed=self.response_embed('Use commands here.', False))
 
     # WRAPPERS
 
@@ -87,6 +107,9 @@ class Bot(Client):
             async def sub_wrapper(self, *args, **kwargs):
                 try:
                     return await func(self, *args, **kwargs)
+                except asyncio.CancelledError:
+                    # ignore these - spam when bot restarts
+                    return
                 except Exception as ex:
                     err = 'Unhandled {} in event {}: {}'.format(ex.__class__.__name__,
                                                                 func.__name__,
@@ -98,7 +121,7 @@ class Bot(Client):
         return wrapper
 
     # command wrapper
-    def command(description, usage='', admin_only=False, category='general'):
+    def command(description, usage='', admin_only=False, category='General'):
         def wrapper(func):
             func.bot_command = True
             func.description = description
@@ -107,30 +130,39 @@ class Bot(Client):
             func.category = category
             
             @wraps(func)
-            async def sub_wrapper(self, member, *args):
+            async def sub_wrapper(self, *args, **kwargs):
                 try:
-                    response = await func(self, member, *args)
-                except UsageException as ex:
+                    response = await func(self, *args, **kwargs)
+                    success = True
+                except UsageError as ex:
                     response = 'Correct usage is "{}{} {}"{}'.format(self.command_prefix,
                                                                      func.__name__,
-                                                                     usage,
+                                                                     self.rcpfx(usage),
                                                                      '\n{}'.format(ex.value) if ex.value else '')
+                    success = False
+                except CommandError as ex:
+                    response = ex.value
+                    success = False
+                except asyncio.CancelledError:
+                    # ignore these - spam when bot restarts
+                    return
                 except Exception as ex:
                     # unhandled exception
                     err = 'Unhandled {} in command {}{} by {}: {}'.format(ex.__class__.__name__,
                                                                           self.command_prefix,
                                                                           func.__name__,
-                                                                          member,
+                                                                          kwargs['member'],
                                                                           ex)
                     log(err)
                     await self.admin_channel.send(err)
                     response = 'Sorry, that command failed.'
-                
+                    success = False
+
                 if response:
                     if isinstance(response, Embed):
-                        return await member.send(embed=response)
+                        return await kwargs['channel'].send(embed=response)
                     else:
-                        return await member.send(response)
+                        return await kwargs['channel'].send(embed=self.response_embed(response, success))
                     
             return sub_wrapper
         return wrapper
@@ -146,6 +178,9 @@ class Bot(Client):
                 kwargs['state'] = 'setup'
                 try:
                     kwargs = await func(self, **kwargs)
+                except asyncio.CancelledError:
+                    # ignore these - spam when bot restarts
+                    return
                 except Exception as ex:
                     err = 'Unhandled {} while starting up process {}: {}'.format(ex.__class__.__name__,
                                                                                  func.__name__,
@@ -185,94 +220,105 @@ class Bot(Client):
     # command embed
     def cmd_embed(self, cmd):
         embed = Embed(title='{}{}'.format(self.command_prefix, cmd.__name__),
-                      description='{}\nUsage: {}{} {}'.format(cmd.description, self.command_prefix, cmd.__name__, cmd.usage),
-                      color=0xb72025 if cmd.admin_only else 0x00607d)
+                      description=self.rcpfx('{}\nUsage: {}{} {}'.format(cmd.description, self.command_prefix, cmd.__name__, cmd.usage)),
+                      color=self.admin_role.colour if cmd.admin_only else self.member_role.colour)
         embed.set_author(name='Esports Bot')
         if cmd.admin_only:
             embed.set_footer(text='Admin-only command.')
 
         return embed
+    
+    # response embed
+    def response_embed(self, response, success):
+        return Embed(description=response,
+                     color=0x00ff00 if success else 0xff0000)
 
     # EVENTS
         
     # output to terminal if the bot successfully logs in
     @event()
-    async def on_ready(self):
+    async def on_ready(self):        
         # output information about the bot's login
         log('Logged in as {0}, {0.id}'.format(self.user))
-        log('------')
 
         # command prefix
         self.command_prefix = self.config.get('general', 'command_prefix')
 
+        # bot name
         self.name = self.config.get('general', 'name')
 
+        # read guild variable ids from the config file and intialise them as global variables
+        self.guild = self.get_guild(int(self.config.get('general', 'guild')))
+
+        # channels
+        self.bot_channel = self.guild.get_channel(int(self.config.get('channels', 'bot')))
+        self.admin_channel = self.guild.get_channel(int(self.config.get('channels', 'admin')))
+
+        # roles
+        self.admin_role = find(lambda role: role.id == int(self.config.get('roles', 'admin')), self.guild.roles)
+        self.member_role = find(lambda role: role.id == int(self.config.get('roles', 'member')), self.guild.roles)
+        self.guest_role = find(lambda role: role.id == int(self.config.get('roles', 'guest')), self.guild.roles)
+
         # produce the list of commands
-        log('Producing the command lists')
         self.commands = {}
         for att in dir(self):
             attr = getattr(self, att, None)
             if hasattr(attr, 'bot_command'):
                 self.commands[att] = {'cmd': attr, 'admin_only': attr.admin_only, 'embed': self.cmd_embed(attr)}
-
-        # read guild variable ids from the config file and intialise them as global variables
-        log('Initialising the guild variables')
-        self.guild = self.get_guild(int(self.config.get('general', 'guild')))
-
-        # channels
-        self.admin_channel = self.guild.get_channel(int(self.config.get('channels', 'admin')))
-
-        # roles
-        self.admin_role = find(lambda role: role.id == self.config.get('roles', 'admin'), self.guild.roles)
-
+                
         # change the nickname of the bot to its name
-        log('Changing nickname to {}'.format(self.name))
         await self.guild.me.edit(nick=self.name)
 
         # maintain the bots presence
-        log('Maintaining the bots presence')
         asyncio.ensure_future(self.maintain_presence())
 
-        # generate the help text
-        log('Generating the help text')
-        self.help_embed = Embed(color=0x00607d)
-        self.help_embed.add_field(name='Commands',
-                                  value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if not self.commands[command]['admin_only']]))
+        # generate the help embeds
+        self.help_embed = Embed(title='Commands',
+                                color=self.member_role.colour)
+        for category in ['General', 'Games', 'Roles']:
+            self.help_embed.add_field(name=category,
+                                      value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if not self.commands[command]['admin_only'] and self.commands[command]['cmd'].category == category]),)
         self.help_embed.set_footer(text='Type "{}help command" to get its usage.'.format(self.command_prefix))
-        self.admin_embed = Embed(color=0xb72025)
-        self.admin_embed.add_field(name='Commands',
-                                   value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if not self.commands[command]['admin_only']]))
-        self.admin_embed.add_field(name='Admin-only commands',
-                                   value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if self.commands[command]['admin_only']]))
+        self.admin_embed = Embed(title='Admin Commands',
+                                 color=self.admin_role.colour)
+        for category in ['General', 'Games', 'Roles']:
+            self.admin_embed.add_field(name=category,
+                                       value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if self.commands[command]['cmd'].category == category]))
         self.admin_embed.set_footer(text='Type "{}help command" to get its usage.'.format(self.command_prefix))
         
         # generate the game roles
-        log('Generating the game roles')
         self.games = []
         with open('games.txt', 'r') as f:
             for line in f:
-                id = int(line.strip())
+                try:
+                    id = int(line.strip())
 
-                # check if role exists
-                if find(lambda role: role.id == id, self.guild.roles):
-                    self.games.append(id)
-                else:
-                    # role doesn't exist
-                    log('Couldn\'t find role with ID {}'.format(id))
+                    role = find(lambda role: role.id == id, self.guild.roles)
+
+                    # check if role exists
+                    if role:
+                        self.games.append(role)
+                    else:
+                        # role doesn't exist
+                        log('Couldn\'t find role with ID {}'.format(id))
+                except Exception as ex:
+                    log('Unhandled {} while reading in role ID {}: {}'.format(ex.__class__.__name__,
+                                                                              line.strip(),
+                                                                              ex))
 
         with open('games.txt', 'w') as f:
-            for id in self.games:
-                f.write('{}\n'.format(id))
+            for role in self.games:
+                f.write('{}\n'.format(role.id))
         
         # ready to go!
-        log('Ready to go!')
         log('------')
+        self.ready.set()
         
     # check the contents of the message
     @event()
     async def on_message(self, message):
         # wait until the bot is ready
-        await self.wait_until_ready()
+        await self.ready.wait()
 
         # process responses if message isn't from user:
         if message.author != self.user:
@@ -283,14 +329,14 @@ class Bot(Client):
             member = self.guild.get_member(message.author.id)
             
             # check whether a command has been given
-            if content.startswith(self.command_prefix):
-                # check whether it was given correctly by DM
-                if isinstance(message.channel, PrivateChannel):
-                    return await self.process_commands(message, member, content)
-                else:
-                    # delete message if in guild channel and remind user to use DM's
-                    await delete_message(message)
-                    return await member.send('Use commands here.')
+            if member and content.startswith(self.command_prefix):
+                return await self.process_commands(message, member, content)
+
+    # check if a deleted role was a game role
+    @event()
+    async def on_guild_role_delete(self, role):
+        if role in self.games:
+            self.games.remove(role)
 
     # PERIODIC COROUTINES
     
@@ -331,102 +377,126 @@ class Bot(Client):
     
     # list the bot commands
     @command(description='List the bot commands and their usage.', usage='[command]')
-    async def help(self, member, *args):
+    async def help(self, *args, **kwargs):
         if len(args) == 0:
             # give the correct version of the help text
-            if self.admin_role in member.roles:
+            if kwargs['channel'] == self.admin_channel:
                 return self.admin_embed
             else:
                 return self.help_embed
         elif len(args) == 1:
             # find the command
             command = args[0].lower().replace(self.command_prefix, '')
-            if command in self.commands and (not self.commands[command]['admin_only'] or self.admin_role in member.roles):
+            if command in self.commands and (not self.commands[command]['admin_only'] or kwargs['channel'] == self.admin_channel):
                 return self.commands[command]['embed']
             else:
-                return 'Command {}{} not found.'.format(self.command_prefix, command)
+                raise CommandError('Command {}{} not found.'.format(self.command_prefix, command))
         else:
-            raise UsageException
+            raise UsageError
 
     # GAME ROLE COMMANDS
 
     # add game role
-    @command(description='Add a game role.', usage='game')
-    async def addgame(self, member, *args):
+    @command(description='Add a game role.', usage='game', category='Games')
+    async def addgame(self, *args, **kwargs):
         if len(args) == 0:
-            raise UsageException
+            raise UsageError
         else:
             game = ' '.join(args)
 
-            role = find(lambda role: role.name.lower() == game.lower(), self.guild.roles)
+            role = find(lambda role: role.name.lower() == game.lower(), self.games)
 
             if role:
                 # role exists
-                if role in member.roles:
+                if role in kwargs['member'].roles:
                     # member already has the role
-                    return 'You already have "{}" role.'.format(role.name)
+                    raise CommandError('You already have "{}" role.'.format(role.name))
                 else:
                     # member doesn't have role
-                    await member.add_roles(*[role])
+                    await kwargs['member'].add_roles(*[role])
                     return 'Added "{}" role.'.format(role.name)
             else:
                 # role doesn't exist
-                return 'Didn\'t recognise "{}" role.'.format(game)
+                raise CommandError('Didn\'t recognise "{}" role.'.format(game))
 
     # remove game role
-    @command(description='Remove a game role.', usage='games')
-    async def removegame(self, member, *args):
+    @command(description='Remove a game role.', usage='games', category='Games')
+    async def removegame(self, *args, **kwargs):
         if len(args) == 0:
-            raise UsageException
+            raise UsageError
         else:
             game = ' '.join(args)
 
-            role = find(lambda role: role.name.lower() == game.lower() and role.id in self.games, self.guild.roles)
+            role = find(lambda role: role.name.lower() == game.lower(), self.games)
 
             if role:
                 # role exists
-                if role in member.roles:
+                if role in kwargs['member'].roles:
                     # member already has the role
-                    await member.remove_roles(*[role])
+                    await kwargs['member'].remove_roles(*[role])
                     return 'Removed "{}" role.'.format(role.name)
                 else:
                     # member doesn't have role
-                    return 'You don\'t have "{}" role.'.format(role.name)
+                    raise CommandError('You don\'t have "{}" role.'.format(role.name))
             else:
                 # role doesn't exist
-                return 'Didn\'t recognise "{}" role.'.format(game)
+                raise CommandError('Didn\'t recognise "{}" role.'.format(game))
 
     # list the game roles
-    @command(description='List the game roles.')
-    async def listgames(self, member, *args):
+    @command(description='List the game roles.', category='Games')
+    async def listgames(self, *args, **kwargs):
         # get the list of roles
-        games = [role.name for role in self.guild.roles if role.id in self.games]
+        games = [role.name for role in self.games]
 
         return 'The game roles are:\n{}'.format(', '.join(games))
 
     # create a new game role
-    @command(description='Create a new game role.', usage='game', admin_only=True)
-    async def creategame(self, member, *args):
+    @command(description='Create a new game role.', usage='game', admin_only=True, category='Games')
+    async def creategame(self, *args, **kwargs):
         if len(args) == 0:
-            raise UsageException
+            raise UsageError
         else:
             game = ' '.join(args)
             
             # check if role already exists
-            role = find(lambda role: role.name.lower() == game.lower(), self.guild.roles)
+            role = find(lambda role: role.name.lower() == game.lower(), self.games)
 
             if role:
                 # role already exists
-                return '"{}" game already exists.'.format(self.games[args[0].lower()].name)
+                raise CommandError('"{}" game already exists.'.format(self.games[args[0].lower()].name))
             else:
                 # role doesn't exist
                 role = await self.guild.create_role(name=game)
-                self.games.append(role.id)
+                self.games.append(role)
+                with open('games.txt', 'a') as f:
+                    f.write('{}\n'.format(role.id))
                 return 'Created "{}" game.'.format(game)
 
-    @command(description='')
-    async def test(self, member, *args):
-        await None.send('Test')
+    # make yourself a member
+    @command(description='Give yourself the member role.', category='Roles')
+    async def member(self, *args, **kwargs):
+        if self.member_role in kwargs['member'].roles:
+            raise CommandError('You already have the member role.')
+        else:
+            await edit_roles(kwargs['member'], add=[self.member_role], remove=[self.guest_role])
+            return 'Adding member role.'
+
+    # make yourself a guest
+    @command(description='Give yourself the guest role.', category='Roles')
+    async def guest(self, *args, **kwargs):
+        if self.guest_role in kwargs['member'].roles:
+            raise CommandError('You already have the guest role.')
+        else:
+            await edit_roles(kwargs['member'], add=[self.guest_role], remove=[self.member_role])
+            return 'Adding guest role.'
+    
+    # restart the bot
+    @command(description='Restart the bot.', admin_only=True)
+    async def restart(self, *args, **kwargs):
+        await kwargs['channel'].send(embed=self.response_embed('Restarting.', True))
+        log('Restarting the bot.')
+        log('------')
+        await self.logout()
         
 # start the bot
 Bot()
