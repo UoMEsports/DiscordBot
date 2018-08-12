@@ -153,7 +153,7 @@ class Bot(Client):
         command = command.replace(self.command_prefix, '', 1).lower()
         channel = message.channel
 
-        if channel in [self.bot_channel, self.admin_channel]:
+        if channel in [self.bot_channel, self.admin_channel] and not message.author.bot:
             if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
                 return await self.commands[command]['cmd'](*args, member=member, channel=channel)
             else:
