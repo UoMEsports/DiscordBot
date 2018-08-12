@@ -6,8 +6,7 @@ from aiohttp import ClientSession
 from configparser import ConfigParser
 from csv import reader, writer
 from datetime import datetime, timedelta
-from discord import Client, Embed, File, Game, Streaming
-from discord.abc import GuildChannel
+from discord import Client, Embed, File, Game, NotFound, Streaming
 from discord.utils import find
 from functools import wraps
 from io import BytesIO
@@ -16,13 +15,24 @@ from io import BytesIO
 
 # incorrect usage error
 class UsageError(Exception):
-    def __init__(self, value=None):
-        self.value = value
+    pass
 
 # command failed error
 class CommandError(Exception):
-    def __init__(self, value):
-        self.value = value
+    pass
+
+# FILE MANAGEMENT
+
+# write the strikes to strikes.csv
+def write_strikes(strikes):
+    with open('strikes.csv', 'w', newline='', encoding='utf-8') as f:
+        swriter = writer(f, delimiter=',', quotechar='\'')
+
+        # write out the header line
+        swriter.writerow(['ID', 'Username', 'Reason #1', 'Reason #2', 'Reason #3', 'Unban date'])
+
+        for id in strikes:
+            swriter.writerow([id] + strikes[id])
 
 # UTILITY
 
@@ -70,7 +80,68 @@ class Bot(Client):
         finally:
             loop.close()
 
+    # FILE MANAGEMENT
+
+    # read the strikes in from the file
+    async def read_strikes(self):
+        try:
+            with open('strikes.csv', 'r', newline='', encoding='utf-8') as f:
+                sreader = reader(f, delimiter=',', quotechar='\'')
+
+                if sreader:
+                    # skip the header line
+                    next(sreader)
+                    
+                    strikes = {}
+                    for line in sreader:
+                        strikes[line[0]] = line[1:]
+
+                    # check if the usernames have changed
+                    for sid in strikes:
+                        try:
+                            user = await self.get_user_info(int(sid))
+                            strikes[sid][0] = str(user)
+                        except NotFound:
+                            # couldn't find user
+                            log('Couldn\'t find user with ID {}'.format(sid))
+                            strikes.pop(sid)
+                else:
+                    # strikes file is empty
+                    strikes = {}
+        except FileNotFoundError:
+            # file not found
+            log('Strikes file is empty - making one')
+            strikes = {}
+        finally:
+            write_strikes(strikes)
+            return strikes
+
     # UTILITIES
+
+    # confirm a command
+    async def confirm(self, member, channel, prompt, timeout=60.):
+        # check message is from the user
+        def check(message):
+            return message.author == member and message.channel == channel
+
+        try:
+            while True:
+                await channel.send(embed=self.response_embed('{} (y/n)'.format(prompt)))
+                
+                message = await self.wait_for('message', check=check, timeout=timeout)
+
+                response = message.content.strip().lower()
+
+                if response in ['y', 'yes']:
+                    return True
+                elif response in ['n', 'no']:
+                    await channel.send(embed=self.response_embed('Aborted.'))
+                    return False
+                else:
+                    await channel.send(embed=self.response_embed('Didn\'t recognise "{}".'.format(message.content.strip()), False))
+        except asyncio.TimeoutError:
+            await channel.send(embed=self.response_embed('Timed out after {} seconds.'.format(int(timeout)), False))
+            return False
 
     # replace a command prefix token with the command prefix
     def rcpfx(self, text):
@@ -78,20 +149,23 @@ class Bot(Client):
         
     # process the command in a channel
     async def process_commands(self, message, member, content):
+        command, *args = content.split()
+        command = command.replace(self.command_prefix, '', 1).lower()
         channel = message.channel
 
         if channel in [self.bot_channel, self.admin_channel]:
-            command, *args = content.split()
-            command = command.replace(self.command_prefix, '', 1).lower()
-
             if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
                 return await self.commands[command]['cmd'](*args, member=member, channel=channel)
             else:
                 return await channel.send(embed=self.response_embed('Command "{0}{1}" not found. Use "{0}help" to get the list of commands.'.format(self.command_prefix, command), False))
         else:
-            if isinstance(channel, GuildChannel):
+            if channel in self.guild.channels:
                 await message.delete()
-            return await self.bot_channel.send(member.mention, embed=self.response_embed('Use commands here.', False))
+                
+            if command in self.commands and self.commands[command]['admin_only']:
+                return await self.admin_channel.send(member.mention, embed=self.response_embed('Use admin-only commands here.', False))
+            else:
+                return await self.bot_channel.send(member.mention, embed=self.response_embed('Use commands here.', False))
 
     # WRAPPERS
 
@@ -135,10 +209,10 @@ class Bot(Client):
                     response = 'Correct usage is "{}{} {}"{}'.format(self.command_prefix,
                                                                      func.__name__,
                                                                      self.rcpfx(usage),
-                                                                     '\n{}'.format(ex.value) if ex.value else '')
+                                                                     ex)
                     success = False
                 except CommandError as ex:
-                    response = ex.value
+                    response = str(ex)
                     success = False
                 except asyncio.CancelledError:
                     # ignore these - spam when bot restarts
@@ -154,13 +228,11 @@ class Bot(Client):
                     await self.admin_channel.send(err)
                     response = 'Sorry, that command failed.'
                     success = False
-
-                if response:
+                finally:
                     if isinstance(response, Embed):
                         return await kwargs['channel'].send(embed=response)
                     else:
                         return await kwargs['channel'].send(embed=self.response_embed(response, success))
-                    
             return sub_wrapper
         return wrapper
 
@@ -175,6 +247,9 @@ class Bot(Client):
                 kwargs['state'] = 'setup'
                 try:
                     kwargs = await func(self, **kwargs)
+                    
+                    # set the bot to run
+                    kwargs['state'] = 'run'
                 except asyncio.CancelledError:
                     # ignore these - spam when bot restarts
                     return
@@ -184,10 +259,14 @@ class Bot(Client):
                                                                                  ex)
                     log(err)
                     return await self.admin_channel.send(err)
+                
                 # run the process
                 while kwargs['state'] == 'run':
                     try:
                         kwargs = await func(self, **kwargs)
+                    except asyncio.CancelledError:
+                        # ignore these - spam when bot restarts
+                        return
                     except Exception as ex:
                         err = 'Unhandled {} in process {}: {}'.format(ex.__class__.__name__,
                                                                       func.__name__,
@@ -196,12 +275,16 @@ class Bot(Client):
                         await self.admin_channel.send(err)
                         if not retry:
                             kwargs['continue'] = 'end'
-
-                    await asyncio.sleep(period)
+                            break
+                    finally:
+                        await asyncio.sleep(period)
 
                 # finish the process
                 try:
                     return await func(self, **kwargs)
+                except asyncio.CancelledError:
+                    # ignore these - spam when bot restarts
+                    return
                 except Exception as ex:
                     err = 'Unhandled {} while shutting down process {}: {}'.format(ex.__class__.__name__,
                                                                                    func.__name__,
@@ -226,7 +309,7 @@ class Bot(Client):
         return embed
     
     # response embed
-    def response_embed(self, response, success):
+    def response_embed(self, response, success=True):
         return Embed(description=response,
                      color=0x00ff00 if success else 0xff0000)
 
@@ -255,6 +338,8 @@ class Bot(Client):
         self.admin_role = find(lambda role: role.id == int(self.config.get('roles', 'admin')), self.guild.roles)
         self.member_role = find(lambda role: role.id == int(self.config.get('roles', 'member')), self.guild.roles)
         self.guest_role = find(lambda role: role.id == int(self.config.get('roles', 'guest')), self.guild.roles)
+        self.first_strike_role = find(lambda role: role.id == int(self.config.get('roles', 'first_strike')), self.guild.roles)
+        self.second_strike_role = find(lambda role: role.id == int(self.config.get('roles', 'second_strike')), self.guild.roles)
 
         # produce the list of commands
         self.commands = {}
@@ -269,6 +354,9 @@ class Bot(Client):
         # maintain the bots presence
         asyncio.ensure_future(self.maintain_presence())
 
+        # check the unbans
+        asyncio.ensure_future(self.check_unbans())
+
         # generate the help embeds
         self.help_embed = Embed(title='Commands',
                                 color=self.member_role.colour)
@@ -280,8 +368,8 @@ class Bot(Client):
                                  color=self.admin_role.colour)
         for category in ['General', 'Games', 'Roles']:
             self.admin_embed.add_field(name=category,
-                                       value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if self.commands[command]['cmd'].category == category]))
-        self.admin_embed.set_footer(text='Type "{}help command" to get its usage.'.format(self.command_prefix))
+                                       value='\n'.join(['{0}{1}{2}{0}'.format('**' if self.commands[command]['admin_only'] else '', self.command_prefix, command) for command in self.commands if self.commands[command]['cmd'].category == category]))
+        self.admin_embed.set_footer(text='Type "{}help command" to get its usage. Admin-only commands have bold formattng.'.format(self.command_prefix))
         
         # generate the game roles
         self.games = []
@@ -350,9 +438,6 @@ class Bot(Client):
             # the URLs
             kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(stream)
             kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=vnhejis97bfke371caeq7u8zn2li3u'.format(stream)
-
-            # set the bot to run
-            kwargs['state'] = 'run'
         elif kwargs['state'] == 'run':
             # check if the stram is live
             async with ClientSession() as session:
@@ -368,9 +453,34 @@ class Bot(Client):
 
         return kwargs
 
+    # check for unbans
+    @process(period=60.)
+    async def check_unbans(self, **kwargs):
+        if kwargs['state'] == 'run':
+            strikes = await self.read_strikes()
+
+            for sid in strikes:
+                if strikes[sid][4] not in ['', 'never'] and datetime.now() > datetime.strptime(strikes[sid][4], '%Y-%m-%d %H:%M'):
+                    strikes[sid][4] = ''
+
+                    target_user = await self.get_user_info(int(sid))
+
+                    if target_user in [entry.user for entry in await self.guild.bans()]:
+                        # user is banned - unban them
+                        await self.guild.unban(target_user)
+                        await self.admin_channel.send(embed=self.response_embed('{} has been automatically unbanned after 7 days.'.format(strikes[sid][0])))
+                    else:
+                        # user is not banned or could not be unbanned
+                        await self.admin_channel.send(embed=self.response_embed('{}\'s 7-day ban has expired but they couldn\'t be unbanned.'.format(strikes[sid][0]), False))
+
+            # write to the strikes file
+            write_strikes(strikes)
+
+        return kwargs
+
     # COMMANDS
 
-    # GENERAL COMMANDS
+    # GENERAL
     
     # list the bot commands
     @command(description='List the bot commands and their usage.', usage='[command]')
@@ -381,17 +491,23 @@ class Bot(Client):
                 return self.admin_embed
             else:
                 return self.help_embed
-        elif len(args) == 1:
+        else:
             # find the command
             command = args[0].lower().replace(self.command_prefix, '')
             if command in self.commands and (not self.commands[command]['admin_only'] or kwargs['channel'] == self.admin_channel):
                 return self.commands[command]['embed']
             else:
-                raise CommandError('Command {}{} not found.'.format(self.command_prefix, command))
-        else:
-            raise UsageError
+                raise CommandError('Command "{}{}" not found.'.format(self.command_prefix, command))
+    
+    # restart the bot
+    @command(description='Restart the bot.', admin_only=True)
+    async def restart(self, *args, **kwargs):
+        await kwargs['channel'].send(embed=self.response_embed('Restarting.'))
+        log('Restarting the bot.')
+        log('------')
+        await self.logout()
 
-    # GAME ROLE COMMANDS
+    # GAMES
 
     # add game role
     @command(description='Add a game role.', usage='game', category='Games')
@@ -460,14 +576,35 @@ class Bot(Client):
 
             if role:
                 # role already exists
-                raise CommandError('"{}" game already exists.'.format(self.games[args[0].lower()].name))
+                raise CommandError('"{}" role already exists.'.format(role.name))
             else:
                 # role doesn't exist
                 role = await self.guild.create_role(name=game)
                 self.games.append(role)
                 with open('games.txt', 'a') as f:
                     f.write('{}\n'.format(role.id))
-                return 'Created "{}" game.'.format(game)
+                return 'Created "{}" role.'.format(game)
+
+    # delete a game role
+    @command(description='Delete a game role.', usage='game', admin_only=True, category='Games')
+    async def deletegame(self, *args, **kwargs):
+        if len(args) == 0:
+            raise UsageError
+        else:
+            game = ' '.join(args)
+            
+            # check if role already exists
+            role = find(lambda role: role.name.lower() == game.lower(), self.games)
+
+            if role:
+                # role exists
+                await role.delete()
+                return 'Deleted "{}" role.'.format(role.name)
+            else:
+                # role already exists
+                raise CommandError('"{}" role doesn\'t exist.'.format(game))
+
+    # ROLES
 
     # make yourself a member
     @command(description='Give yourself the member role.', category='Roles')
@@ -486,14 +623,150 @@ class Bot(Client):
         else:
             await edit_roles(kwargs['member'], add=[self.guest_role], remove=[self.member_role])
             return 'Adding guest role.'
-    
-    # restart the bot
-    @command(description='Restart the bot.', admin_only=True)
-    async def restart(self, *args, **kwargs):
-        await kwargs['channel'].send(embed=self.response_embed('Restarting.', True))
-        log('Restarting the bot.')
-        log('------')
-        await self.logout()
-        
+
+    # DISCIPLINE
+
+    # strike a user
+    @command(description='Strike a user with a given reason.', usage='user reason', admin_only=True)
+    async def strike(self, *args, **kwargs):
+        if len(args) <= 1:
+            raise UsageError('Specify a user and a reason.')
+        else:
+            name = args[0]
+            reason = ' '.join(args[1:])
+            embed = None
+
+            target = find(lambda member: str(member) == name, self.guild.members)
+            if target:
+                sid = str(target.id)
+                strikes = await self.read_strikes()
+                if sid in strikes:
+                    if strikes[sid][2] == '':
+                        # check if you want to give a 7-day ban
+                        if await self.confirm(kwargs['member'], kwargs['channel'], 'Give {} a 7-day ban?'.format(name)):
+                            strikes[sid][2] = reason
+                            # unban_date = (datetime.now() + timedelta(days=7.)).strftime('%Y-%m-%d %H:%M')
+                            unban_date = (datetime.now() + timedelta(minutes=1.)).strftime('%Y-%m-%d %H:%M')
+                            strikes[sid][4] = unban_date
+                            await target.send(embed=self.response_embed('You have been given a 7-day ban (second strike) for "{}". You will be unbanned at {}.'.format(reason, unban_date), False))
+                            response = '{} has been given a 7-day ban (second strike) by {} for "{}". They will be unbanned at {}.'.format(name, kwargs['member'], reason, unban_date)
+                            await self.guild.ban(target, reason=' '.join(['{}. {}'.format(i+1, strikes[sid][i+1]) for i in range(2)]+[unban_date]))
+                    else:
+                        # check if you want to give a permanent ban
+                        if await self.confirm(kwargs['member'], kwargs['channel'], 'Give {} a permanent ban?'.format(name)):
+                            strikes[sid][3] = reason
+                            strikes[sid][4] = 'never'
+                            await target.send(embed=self.response_embed('You have been given a permanent ban (third strike) for "{}".'.format(reason), False))
+                            response = '{} has been given a permanent ban (third strike) by {} for "{}".'.format(name, kwargs['member'], reason)
+                            await self.guild.ban(target, reason=' '.join(['{}. {}'.format(i+1, strikes[sid][i+1]) for i in range(3)]+['Permanent ban']))
+                else:
+                    strikes[sid] = [target, reason, '', '', '']
+                    await edit_roles(target, [self.first_strike_role], [self.first_strike_role, self.second_strike_role])
+                    await target.send(embed=self.response_embed('You have been given a first strike for "{}". One more strike will result in a 7-day ban. Please follow the rules in future.'.format(reason), False))
+                    response = '{} has been given a first strike by {} for "{}".'.format(name, kwargs['member'], reason)
+                    
+                write_strikes(strikes)
+                return response
+            else:
+                raise CommandError('Cannot find member {}. Did you include their tag?'.format(name))
+
+    # de-strike a user
+    @command(description='De-strike a user with their user ID found using the strikesfile command.', usage='user-ID', admin_only=True)
+    async def destrike(self, *args, **kwargs):
+        if len(args) == 1:
+            sid = args[0]
+            strikes = await self.read_strikes()
+            target_user = await self.get_user_info(int(sid))
+            banned = target_user in [entry.user for entry in await self.guild.bans()]
+
+            if sid in strikes and target_user:
+                target_member = self.guild.get_member(int(sid))
+
+                if strikes[sid][2] == '':
+                    # 1 strike
+
+                    # remove them from the strikes file
+                    strikes.pop(sid)
+
+                    if target_member:
+                        # remove the strike roles
+                        await target_member.remove_roles(*self.strike_roles)
+                        await target_user.send(embed=self.response_embed('Your first strike has been removed.'))
+                        
+                    response = '{}\'s first strike has been removed by {}.'.format(target_user, kwargs['member'])
+                elif strikes[sid][3] == '':
+                    # 2 strikes
+                    strikes[sid][2] = ''
+                    strikes[sid][4] = ''
+
+                    if banned:
+                        # target user is banned
+                        await self.guild.unban(target_user)
+                        response = '{}\'s second strike has been removed by {} and they have been unbanned.'.format(target_user, kwargs['member'])
+                    else:
+                        # target user is not banned
+                        if target_member:
+                            # edit the strike roles
+                            await edit_roles(target_member, [self.first_strike_role], [self.first_strike_role, self.second_strike_role])
+                            await target_user.send(embed=self.response_embed('Your second strike has been removed.'))
+                            
+                        response = '{}\'s second strike has been removed by {}.'.format(target_user, kwargs['member'])
+                else:
+                    # 3 strikes
+                    strikes[sid][3] = ''
+                    strikes[sid][4] = ''
+
+                    if banned:
+                        # target user is banned
+                        await self.guild.unban(target_user)
+                        response = '{}\'s third strike has been removed by {} and they have been unbanned.'.format(target_user, kwargs['member'])
+                    else:
+                        # target user is not banned
+                        if target_member:
+                            # edit the strike roles
+                            await edit_roles(target_member, [self.second_strike_role], [self.first_strike_role, self.second_strike_role])
+                            await target_user.send(embed=self.response_embed('Your third strike has been removed.'))
+                            
+                        response = '{}\'s third strike has been removed by {}.'.format(target_user, kwargs['member'])
+
+                write_strikes(strikes)
+                return response
+            else:
+                raise CommandError('Cannot find user with ID {}.'.format(sid))
+        else:
+            raise UsageError
+
+    # view your own strikes
+    @command(description='See your current strike(s).')
+    async def strikes(self, *args, **kwargs):
+        strikes = await self.read_strikes()
+        sid = str(kwargs['member'].id)
+        if sid in strikes:
+            responses = ['Your current strikes are for:']
+            for i in range(3):
+                reason = strikes[sid][i+1]
+                if reason != '':
+                    responses.append('{}. {}'.format(i+1, reason))
+            await kwargs['member'].send(embed=self.response_embed('\n'.join(responses)))
+        else:
+            await kwargs['member'].send(embed=self.response_embed('You currently have no strikes. Good job!'))
+
+        return 'DM\'d.'
+
+    # view the strikes file
+    @command(description='See the strikes file.', admin_only=True)
+    async def strikesfile(self, *args, **kwargs):
+        await kwargs['member'].send(embed=self.response_embed('The strikes file.'),
+                                    file=File(fp='strikes.csv'))
+
+        return 'DM\'d.'
+
+    @command(description='Test')
+    async def test(self, *args, **kwargs):
+        try:
+            raise UsageError('Test2')
+        except Exception as ex:
+            print(ex)
+
 # start the bot
 Bot()
