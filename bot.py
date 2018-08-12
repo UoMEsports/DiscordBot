@@ -761,12 +761,5 @@ class Bot(Client):
 
         return 'DM\'d.'
 
-    @command(description='Test')
-    async def test(self, *args, **kwargs):
-        try:
-            raise UsageError('Test2')
-        except Exception as ex:
-            print(ex)
-
 # start the bot
 Bot()
