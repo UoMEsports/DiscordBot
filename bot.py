@@ -732,7 +732,7 @@ class Bot(Client):
 
                     if target_member:
                         # remove the strike roles
-                        await target_member.remove_roles(*self.strike_roles)
+                        await target_member.remove_roles(*[self.first_strike_role, self.second_strike_role])
                         await target_user.send(embed=self.response_embed('Your first strike has been removed.'))
                         
                     response = '{}\'s first strike has been removed by {}.'.format(target_user, kwargs['member'])
