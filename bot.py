@@ -195,7 +195,7 @@ class Bot(Client):
                                                                 func.__name__,
                                                                 ex)
                     log(err)
-                    return self.admin_channel.send(err)
+                    return self.admin_channel.send(embed=self.response_embed(err, False))
                     
             return sub_wrapper
         return wrapper
@@ -234,7 +234,8 @@ class Bot(Client):
                                                                           kwargs['member'],
                                                                           ex)
                     log(err)
-                    await self.admin_channel.send(err)
+                    print(self.admin_channel)
+                    await self.admin_channel.send(embed=self.response_embed(err, False))
                     response = 'Sorry, that command failed.'
                     success = False
                 finally:
@@ -355,6 +356,10 @@ class Bot(Client):
         self.first_strike_role = find(lambda role: role.id == int(self.config.get('roles', 'first_strike')), self.guild.roles)
         self.second_strike_role = find(lambda role: role.id == int(self.config.get('roles', 'second_strike')), self.guild.roles)
 
+        with open('roles.txt', 'w') as f:
+            for role in self.guild.roles:
+                f.write('{0.name} {0.id}\n'.format(role))
+
         # produce the list of commands
         self.commands = {}
         for att in dir(self):
@@ -465,7 +470,7 @@ class Bot(Client):
             
             # the URLs
             kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(stream)
-            kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=vnhejis97bfke371caeq7u8zn2li3u'.format(stream)
+            kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o'.format(stream)
         elif kwargs['state'] == 'run':
             # check if the stram is live
             async with ClientSession() as session:
@@ -482,7 +487,7 @@ class Bot(Client):
         return kwargs
 
     # check for unbans
-    @process(period=60.)
+    @process(period=3600.)
     async def check_unbans(self, **kwargs):
         if kwargs['state'] == 'run':
             strikes = await self.read_strikes()
