@@ -37,9 +37,10 @@ def write_strikes(strikes):
 # UTILITY
 
 def log(message):
+    ts = datetime.now().strftime('%Y-%m-%d %H:%M') 
+    print('[{0}]: {1}'.format(ts, message))
     with open('out.log', 'a') as f:
-        f.write('[{}]: {}\n'.format(datetime.now().strftime('%Y-%m-%d %H:%M'),
-                                    message))
+        f.write('[{}]: {}\n'.format(ts, message))
 
 # edit a member's roles
 async def edit_roles(member, add=[], remove=[]):
