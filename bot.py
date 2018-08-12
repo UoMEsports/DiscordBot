@@ -170,12 +170,16 @@ class Bot(Client):
     # WRAPPERS
 
     # event wrapper
-    def event():
+    def event(wait_until_ready=True):
         def wrapper(func):
             func.bot_event = True
             
             @wraps(func)
             async def sub_wrapper(self, *args, **kwargs):
+                if wait_until_ready:
+                    # wait until the bot is ready
+                    await self.ready.wait()
+                    
                 try:
                     return await func(self, *args, **kwargs)
                 except asyncio.CancelledError:
@@ -302,7 +306,8 @@ class Bot(Client):
         embed = Embed(title='{}{}'.format(self.command_prefix, cmd.__name__),
                       description=self.rcpfx('{}\nUsage: {}{} {}'.format(cmd.description, self.command_prefix, cmd.__name__, cmd.usage)),
                       color=self.admin_role.colour if cmd.admin_only else self.member_role.colour)
-        embed.set_author(name='Esports Bot')
+        embed.set_author(name='Esports Bot',
+                         icon_url=self.user.avatar_url)
         if cmd.admin_only:
             embed.set_footer(text='Admin-only command.')
 
@@ -310,25 +315,29 @@ class Bot(Client):
     
     # response embed
     def response_embed(self, response, success=True):
-        return Embed(description=response,
-                     color=0x00ff00 if success else 0xff0000)
+        embed = Embed(description=response,
+                      color=0x00ff00 if success else 0xff0000)
+        embed.set_author(name='UoM Esports Bot',
+                         icon_url=self.user.avatar_url)
+
+        return embed
 
     # EVENTS
         
     # output to terminal if the bot successfully logs in
-    @event()
-    async def on_ready(self):        
+    @event(wait_until_ready=False)
+    async def on_ready(self):
         # output information about the bot's login
         log('Logged in as {0}, {0.id}'.format(self.user))
 
         # command prefix
         self.command_prefix = self.config.get('general', 'command_prefix')
 
-        # bot name
-        self.name = self.config.get('general', 'name')
-
         # read guild variable ids from the config file and intialise them as global variables
         self.guild = self.get_guild(int(self.config.get('general', 'guild')))
+
+        # bot name
+        await self.guild.me.edit(nick=self.config.get('general', 'name'))
 
         # channels
         self.bot_channel = self.guild.get_channel(int(self.config.get('channels', 'bot')))
@@ -347,9 +356,6 @@ class Bot(Client):
             attr = getattr(self, att, None)
             if hasattr(attr, 'bot_command'):
                 self.commands[att] = {'cmd': attr, 'admin_only': attr.admin_only, 'embed': self.cmd_embed(attr)}
-                
-        # change the nickname of the bot to its name
-        await self.guild.me.edit(nick=self.name)
 
         # maintain the bots presence
         asyncio.ensure_future(self.maintain_presence())
@@ -360,12 +366,16 @@ class Bot(Client):
         # generate the help embeds
         self.help_embed = Embed(title='Commands',
                                 color=self.member_role.colour)
+        self.help_embed.set_author(name='UoM Esports Bot',
+                                   icon_url=self.user.avatar_url)
         for category in ['General', 'Games', 'Roles']:
             self.help_embed.add_field(name=category,
                                       value='\n'.join(['{}{}'.format(self.command_prefix, command) for command in self.commands if not self.commands[command]['admin_only'] and self.commands[command]['cmd'].category == category]),)
         self.help_embed.set_footer(text='Type "{}help command" to get its usage.'.format(self.command_prefix))
         self.admin_embed = Embed(title='Admin Commands',
                                  color=self.admin_role.colour)
+        self.admin_embed.set_author(name='UoM Esports Bot',
+                                    icon_url=self.user.avatar_url)
         for category in ['General', 'Games', 'Roles']:
             self.admin_embed.add_field(name=category,
                                        value='\n'.join(['{0}{1}{2}{0}'.format('**' if self.commands[command]['admin_only'] else '', self.command_prefix, command) for command in self.commands if self.commands[command]['cmd'].category == category]))
@@ -402,9 +412,6 @@ class Bot(Client):
     # check the contents of the message
     @event()
     async def on_message(self, message):
-        # wait until the bot is ready
-        await self.ready.wait()
-
         # process responses if message isn't from user:
         if message.author != self.user:
             # get the message content in a managable format
@@ -422,6 +429,25 @@ class Bot(Client):
     async def on_guild_role_delete(self, role):
         if role in self.games:
             self.games.remove(role)
+                        
+    # when a member joins, send them a PM
+    @event()
+    async def on_member_join(self, member):
+        await member.send(embed=self.response_embed('Welcome to the University of Manchester Esports Society discord server!\nPlease indicate whether you\'re a member/guest using the "!member"/"!guest" commands.'))
+        await member.send(embed=self.help_embed)
+
+        # check if they have strikes
+        sid = str(member.id)
+        strikes = await self.read_strikes()
+        if sid in strikes:
+            if strikes[sid][2] == '':
+                # user has 1 strike
+                await member.send(embed=self.response_embed('You currently have 1 strike. Another strike will result in a 7-day ban. Please follow the rules in the future.', False))
+                return await member.add_roles(*[self.first_strike_role])
+            else:
+                # user has 2 strikes
+                await member.send(embed=self.response_embed('You currently have 2 strikes. Another strike will result in a permanent ban. Please follow the rules in the future.', False))
+                return await member.add_roles(*[self.second_strike_role])
 
     # PERIODIC COROUTINES
     
