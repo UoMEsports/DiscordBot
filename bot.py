@@ -116,6 +116,11 @@ class Bot(Client):
             write_strikes(strikes)
             return strikes
 
+    # write the config file
+    def write_config(self):
+        with open('config.cfg', 'w') as f:
+            self.config.write(f)
+
     # UTILITIES
 
     # confirm a command
@@ -145,7 +150,7 @@ class Bot(Client):
 
     # replace a command prefix token with the command prefix
     def rcpfx(self, text):
-        return text.replace('%CPFX%', self.command_prefix)
+        return text.replace('CPFX', self.command_prefix)
         
     # process the command in a channel
     async def process_commands(self, message, member, content):
@@ -383,27 +388,24 @@ class Bot(Client):
         
         # generate the game roles
         self.games = []
-        with open('games.txt', 'r') as f:
-            for line in f:
-                try:
-                    id = int(line.strip())
+        for sid in self.config.get('roles', 'games').split():
+            try:
+                role = find(lambda role: role.id == int(sid), self.guild.roles)
 
-                    role = find(lambda role: role.id == id, self.guild.roles)
+                # check if role exists
+                if role:
+                    self.games.append(role)
+                else:
+                    # role doesn't exist
+                    log('Couldn\'t find role with ID {}'.format(sid))
+            except Exception as ex:
+                log('Unhandled {} while reading in role ID {}: {}'.format(ex.__class__.__name__,
+                                                                          sid,
+                                                                          ex))
 
-                    # check if role exists
-                    if role:
-                        self.games.append(role)
-                    else:
-                        # role doesn't exist
-                        log('Couldn\'t find role with ID {}'.format(id))
-                except Exception as ex:
-                    log('Unhandled {} while reading in role ID {}: {}'.format(ex.__class__.__name__,
-                                                                              line.strip(),
-                                                                              ex))
-
-        with open('games.txt', 'w') as f:
-            for role in self.games:
-                f.write('{}\n'.format(role.id))
+        # write out working game roles to the config file
+        self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
+        self.write_config()
         
         # ready to go!
         log('------')
@@ -459,7 +461,7 @@ class Bot(Client):
             stream = self.config.get('general', 'stream')
 
             # read in the default presence
-            kwargs['presence'] = self.config.get('general', 'presence')
+            kwargs['presence'] = self.rcpfx(self.config.get('general', 'presence'))
             
             # the URLs
             kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(stream)
@@ -529,7 +531,7 @@ class Bot(Client):
     @command(description='Restart the bot.', admin_only=True)
     async def restart(self, *args, **kwargs):
         await kwargs['channel'].send(embed=self.response_embed('Restarting.'))
-        log('Restarting the bot.')
+        log('Restarting the bot')
         log('------')
         await self.logout()
 
@@ -587,7 +589,13 @@ class Bot(Client):
         # get the list of roles
         games = [role.name for role in self.games]
 
-        return 'The game roles are:\n{}'.format(', '.join(games))
+        embed = Embed(title='The game roles',
+                      description='\n'.join(games),
+                      color=0x00ff00)
+        embed.set_author(name='UoM Esports Bot',
+                         icon_url=self.user.avatar_url)
+
+        return embed
 
     # create a new game role
     @command(description='Create a new game role.', usage='game', admin_only=True, category='Games')
@@ -607,8 +615,8 @@ class Bot(Client):
                 # role doesn't exist
                 role = await self.guild.create_role(name=game)
                 self.games.append(role)
-                with open('games.txt', 'a') as f:
-                    f.write('{}\n'.format(role.id))
+                self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
+                self.write_config()
                 return 'Created "{}" role.'.format(game)
 
     # delete a game role
@@ -624,7 +632,10 @@ class Bot(Client):
 
             if role:
                 # role exists
+                self.games.remove(role)
                 await role.delete()
+                self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
+                self.write_config()
                 return 'Deleted "{}" role.'.format(role.name)
             else:
                 # role already exists

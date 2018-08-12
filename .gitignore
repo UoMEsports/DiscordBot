@@ -3,3 +3,4 @@
 !*.py
 !empty.cfg
 !requirements.txt
+!*.sh
