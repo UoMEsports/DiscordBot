@@ -441,9 +441,6 @@ class Bot(Client):
     # when a member joins, send them a PM
     @event()
     async def on_member_join(self, member):
-        await member.send(embed=self.response_embed('Welcome to the University of Manchester Esports Society discord server!\nPlease indicate whether you\'re a member/guest using the "!member"/"!guest" commands.'))
-        await member.send(embed=self.help_embed)
-
         # check if they have strikes
         sid = str(member.id)
         strikes = await self.read_strikes()
