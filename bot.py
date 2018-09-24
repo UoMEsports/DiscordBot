@@ -473,7 +473,7 @@ class Bot(Client):
             # check if the stram is live
             async with ClientSession() as session:
                 async with session.get(kwargs['API_URL']) as resp:
-                    info = await resp.json(content_type='test/html')
+                    info = await resp.json(content_type='application/json')
 
             if info['stream'] == None:
                 # nothing is streaming - use default presence
