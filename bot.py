@@ -560,10 +560,10 @@ class Bot(Client):
 
         roles = '\n'.join(['Member', 'Guest'] + [role.name for role in self.games])
 
-        counts = [len(self.member_role.members), len(self.guest_role.members)]
+        counts = [str(len(self.member_role.members)), str(len(self.guest_role.members))]
 
         for role in self.games:
-            counts.append(len(role.members))
+            counts.append(str(len(role.members)))
 
         counts = '\n'.join(counts)
 
