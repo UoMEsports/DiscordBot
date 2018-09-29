@@ -540,52 +540,6 @@ class Bot(Client):
 
     # GAMES
 
-    # add game role
-    @command(description='Add a game role.', usage='<game>', category='Games')
-    async def addgame(self, *args, **kwargs):
-        if len(args) == 0:
-            raise UsageError
-        else:
-            game = ' '.join(args)
-
-            role = find(lambda role: role.name.lower() == game.lower(), self.games)
-
-            if role:
-                # role exists
-                if role in kwargs['member'].roles:
-                    # member already has the role
-                    raise CommandError('You already have "{}" role.'.format(role.name))
-                else:
-                    # member doesn't have role
-                    await kwargs['member'].add_roles(*[role])
-                    return 'Added "{}" role.'.format(role.name)
-            else:
-                # role doesn't exist
-                raise CommandError('Didn\'t recognise "{}" role.'.format(game))
-
-    # remove game role
-    @command(description='Remove a game role.', usage='<games>', category='Games')
-    async def removegame(self, *args, **kwargs):
-        if len(args) == 0:
-            raise UsageError
-        else:
-            game = ' '.join(args)
-
-            role = find(lambda role: role.name.lower() == game.lower(), self.games)
-
-            if role:
-                # role exists
-                if role in kwargs['member'].roles:
-                    # member already has the role
-                    await kwargs['member'].remove_roles(*[role])
-                    return 'Removed "{}" role.'.format(role.name)
-                else:
-                    # member doesn't have role
-                    raise CommandError('You don\'t have "{}" role.'.format(role.name))
-            else:
-                # role doesn't exist
-                raise CommandError('Didn\'t recognise "{}" role.'.format(game))
-
     # list the game roles
     @command(description='List the game roles.', category='Games')
     async def listgames(self, *args, **kwargs):
@@ -600,62 +554,25 @@ class Bot(Client):
 
         return embed
 
-    # create a new game role
-    @command(description='Create a new game role.', usage='<game>', admin_only=True, category='Games')
-    async def creategame(self, *args, **kwargs):
-        if len(args) == 0:
-            raise UsageError
-        else:
-            game = ' '.join(args)
-            
-            # check if role already exists
-            role = find(lambda role: role.name.lower() == game.lower(), self.games)
-
-            if role:
-                # role already exists
-                raise CommandError('"{}" role already exists.'.format(role.name))
-            else:
-                # role doesn't exist
-                role = await self.guild.create_role(name=game)
-                self.games.append(role)
-                self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
-                self.write_config()
-                return 'Created "{}" role.'.format(game)
-
-    # delete a game role
-    @command(description='Delete a game role.', usage='<game>', admin_only=True, category='Games')
-    async def deletegame(self, *args, **kwargs):
-        if len(args) == 0:
-            raise UsageError
-        else:
-            game = ' '.join(args)
-            
-            # check if role already exists
-            role = find(lambda role: role.name.lower() == game.lower(), self.games)
-
-            if role:
-                # role exists
-                self.games.remove(role)
-                await role.delete()
-                self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
-                self.write_config()
-                return 'Deleted "{}" role.'.format(role.name)
-            else:
-                # role already exists
-                raise CommandError('"{}" role doesn\'t exist.'.format(game))
-
     # get count of each role
     @command(description='Get count of each role.', admin_only=True, category='Games')
     async def rolecall(self, *args, **kwargs):
+        
+        roles = '\n'.join(['Member', 'Guest'] + self.games)
 
-        game_counts = []
+        counts = [len(self.member_role.members), len(self.guest_role.members)]
 
         for role in self.games:
-            game_counts.append('**' + role.name + '**:\t' + str(len(role.members)))
+            counts.append(len(role.members))
+
+        counts = '\n'.join([, 'Guest'] + self.games)
 
         embed = Embed(title='Role call',
-                      description='\n'.join(game_counts),
                       color=0x00ff00)
+
+        embed.add_header(name='Role', value=roles)
+        embed.add_header(name='Count', value=counts)
+        
         embed.set_author(name='UoM Esports Bot',
                          icon_url=self.user.avatar_url)
 
@@ -677,6 +594,23 @@ class Bot(Client):
                     self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
                     self.write_config()
                     return 'Imported "{}" role.'.format(role.name)
+
+    # unlink a game role
+    @command(description='Unlink a game role.', usage='<role>', admin_only=True, category='Games')
+    async def unlinkgame(self, *args, **kwargs):
+        if len(args) == 0:
+            raise UsageError
+        else:
+            for role in kwargs['roles']:
+                if role.id in self.games:
+                    # role exists
+                    self.games.remove(role)
+                    self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
+                    self.write_config()
+                    return 'Deleted "{}" role.'.format(role.name)
+                else:
+                    # role doesn't exist
+                    raise CommandError('"{}" role doesn\'t exist.'.format(game))
 
     # ROLES
 
