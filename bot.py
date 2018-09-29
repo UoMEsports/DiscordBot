@@ -558,7 +558,7 @@ class Bot(Client):
     @command(description='Get count of each role.', admin_only=True, category='Games')
     async def rolecall(self, *args, **kwargs):
 
-        roles = '\n'.join(['Member', 'Guest'] + self.games)
+        roles = '\n'.join(['Member', 'Guest'] + [role.name for role in self.games])
 
         counts = [len(self.member_role.members), len(self.guest_role.members)]
 
