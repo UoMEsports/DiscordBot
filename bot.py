@@ -651,7 +651,7 @@ class Bot(Client):
         game_counts = []
 
         for role in self.games:
-            game_counts.append(role.name + '\t\t' + str(len(role.members)))
+            game_counts.append('**' + role.name + '**:\t' + str(len(role.members)))
 
         embed = Embed(title='Role call',
                       description='\n'.join(game_counts),
