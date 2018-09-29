@@ -557,7 +557,7 @@ class Bot(Client):
     # get count of each role
     @command(description='Get count of each role.', admin_only=True, category='Games')
     async def rolecall(self, *args, **kwargs):
-        
+
         roles = '\n'.join(['Member', 'Guest'] + self.games)
 
         counts = [len(self.member_role.members), len(self.guest_role.members)]
@@ -565,13 +565,13 @@ class Bot(Client):
         for role in self.games:
             counts.append(len(role.members))
 
-        counts = '\n'.join([, 'Guest'] + self.games)
+        counts = '\n'.join(counts)
 
         embed = Embed(title='Role call',
                       color=0x00ff00)
 
-        embed.add_header(name='Role', value=roles)
-        embed.add_header(name='Count', value=counts)
+        embed.add_field(name='Role', value=roles)
+        embed.add_field(name='Count', value=counts)
         
         embed.set_author(name='UoM Esports Bot',
                          icon_url=self.user.avatar_url)
