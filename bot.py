@@ -644,6 +644,23 @@ class Bot(Client):
                 # role already exists
                 raise CommandError('"{}" role doesn\'t exist.'.format(game))
 
+    # get count of each role
+    @command(description='Get count of each role.', admin_only=True, category='Games')
+    async def rolecall(self, *args, **kwargs):
+
+        game_counts = []
+
+        for role in self.games:
+            game_counts.append(role.name + '\t\t' + str(len(role.members)))
+
+        embed = Embed(title='Role call',
+                      description='\n'.join(game_counts),
+                      color=0x00ff00)
+        embed.set_author(name='UoM Esports Bot',
+                         icon_url=self.user.avatar_url)
+
+        return embed
+
     # ROLES
 
     # make yourself a member
