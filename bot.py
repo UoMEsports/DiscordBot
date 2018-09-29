@@ -676,7 +676,7 @@ class Bot(Client):
                     self.games.append(role)
                     self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
                     self.write_config()
-                    return 'Imported "{}" role.'.format(game)
+                    return 'Imported "{}" role.'.format(role.name)
 
     # ROLES
 
