@@ -541,7 +541,7 @@ class Bot(Client):
     # GAMES
 
     # add game role
-    @command(description='Add a game role.', usage='game', category='Games')
+    @command(description='Add a game role.', usage='<game>', category='Games')
     async def addgame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
@@ -564,7 +564,7 @@ class Bot(Client):
                 raise CommandError('Didn\'t recognise "{}" role.'.format(game))
 
     # remove game role
-    @command(description='Remove a game role.', usage='games', category='Games')
+    @command(description='Remove a game role.', usage='<games>', category='Games')
     async def removegame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
@@ -601,7 +601,7 @@ class Bot(Client):
         return embed
 
     # create a new game role
-    @command(description='Create a new game role.', usage='game', admin_only=True, category='Games')
+    @command(description='Create a new game role.', usage='<game>', admin_only=True, category='Games')
     async def creategame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
@@ -623,7 +623,7 @@ class Bot(Client):
                 return 'Created "{}" role.'.format(game)
 
     # delete a game role
-    @command(description='Delete a game role.', usage='game', admin_only=True, category='Games')
+    @command(description='Delete a game role.', usage='<game>', admin_only=True, category='Games')
     async def deletegame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
@@ -704,7 +704,7 @@ class Bot(Client):
     # DISCIPLINE
 
     # strike a user
-    @command(description='Strike a user with a given reason.', usage='user reason', admin_only=True)
+    @command(description='Strike a user with a given reason.', usage='<user> <reason>', admin_only=True)
     async def strike(self, *args, **kwargs):
         if len(args) <= 1:
             raise UsageError('Specify a user and a reason.')
@@ -748,7 +748,7 @@ class Bot(Client):
                 raise CommandError('Cannot find member {}. Did you include their tag?'.format(name))
 
     # de-strike a user
-    @command(description='De-strike a user with their user ID found using the strikesfile command.', usage='user-ID', admin_only=True)
+    @command(description='De-strike a user with their user ID found using the strikesfile command.', usage='<user-ID>', admin_only=True)
     async def destrike(self, *args, **kwargs):
         if len(args) == 1:
             sid = args[0]
