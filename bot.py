@@ -161,7 +161,7 @@ class Bot(Client):
 
         if channel in [self.bot_channel, self.admin_channel] and not message.author.bot:
             if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
-                return await self.commands[command]['cmd'](*args, member=member, channel=channel)
+                return await self.commands[command]['cmd'](*args, member=member, channel=channel, roles=message.role_mentions)
             else:
                 return await channel.send(embed=self.response_embed('Command "{0}{1}" not found. Use "{0}help" to get the list of commands.'.format(self.command_prefix, command), False))
         else:
@@ -660,6 +660,26 @@ class Bot(Client):
                          icon_url=self.user.avatar_url)
 
         return embed
+
+    # import game role
+    @command(description='Import game role.', usage='<role>', admin_only=True, category='Games')
+    async def importgame(self, *args, **kwargs):
+        if len(args) == 0:
+            raise UsageError
+        else:
+            for role in kwargs['roles']:
+                # check if role already exists
+                rolecheck = find(lambda role: role.name.lower() == game.lower(), self.games)
+
+                if rolecheck:
+                    # role already exists
+                    raise CommandError('"{}" role already exists.'.format(role.name))
+                else:
+                    # role doesn't exist
+                    self.games.append(role)
+                    self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
+                    self.write_config()
+                    return 'Imported "{}" role.'.format(game)
 
     # ROLES
 
