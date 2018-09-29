@@ -668,10 +668,7 @@ class Bot(Client):
             raise UsageError
         else:
             for role in kwargs['roles']:
-                # check if role already exists
-                rolecheck = find(lambda role: role.name.lower() == game.lower(), self.games)
-
-                if rolecheck:
+                if role.id in self.games:
                     # role already exists
                     raise CommandError('"{}" role already exists.'.format(role.name))
                 else:
