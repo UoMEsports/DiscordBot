@@ -602,7 +602,7 @@ class Bot(Client):
             raise UsageError
         else:
             for role in kwargs['roles']:
-                if role.id in self.games:
+                if role in self.games:
                     # role exists
                     self.games.remove(role)
                     self.config.set('roles', 'games', ' '.join([str(role.id) for role in self.games]))
