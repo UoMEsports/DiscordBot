@@ -561,9 +561,9 @@ class Bot(Client):
 
         games = []
         for role in self.games:
-            games += (role.name, len(role.members))
+            games.append((role.name, len(role.members)))
 
-        games = sorted(games,key=itemgetter(1))
+        games = sorted(games,key=itemgetter(1),reverse=True)
 
         roles = '\n'.join(['**Member**', '**Guest**'] + [role[0] for role in games])
 
