@@ -558,9 +558,9 @@ class Bot(Client):
     @command(description='Get count of each role.', admin_only=True, category='Games')
     async def rolecall(self, *args, **kwargs):
 
-        roles = '\n'.join(['Member', 'Guest'] + [role.name for role in self.games])
+        roles = '\n'.join(['**Member**', '**Guest**'] + [role.name for role in self.games])
 
-        counts = [str(len(self.member_role.members)), str(len(self.guest_role.members))]
+        counts = ['**' + str(len(self.member_role.members)) + '**', '**' + str(len(self.guest_role.members)) + '**']
 
         for role in self.games:
             counts.append(str(len(role.members)))
@@ -610,7 +610,7 @@ class Bot(Client):
                     return 'Deleted "{}" role.'.format(role.name)
                 else:
                     # role doesn't exist
-                    raise CommandError('"{}" role doesn\'t exist.'.format(game))
+                    raise CommandError('"{}" role doesn\'t exist.'.format(role.name))
 
     # ROLES
 
