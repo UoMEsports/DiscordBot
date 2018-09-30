@@ -10,6 +10,7 @@ from discord import Client, Embed, File, Game, NotFound, Streaming
 from discord.utils import find
 from functools import wraps
 from io import BytesIO
+from operator import itemgetter
 
 # ERRORS
 
@@ -558,29 +559,31 @@ class Bot(Client):
     @command(description='Get count of each role.', admin_only=True, category='Games')
     async def rolecall(self, *args, **kwargs):
 
-        roles = '\n'.join(['**Member**', '**Guest**'] + [role.name for role in self.games])
+        games = []
+        for role in self.games:
+            games += (role.name, len(role.members))
+
+        games = sorted(games,key=itemgetter(1))
+
+        roles = '\n'.join(['**Member**', '**Guest**'] + [role[0] for role in games])
 
         counts = ['**' + str(len(self.member_role.members)) + '**', '**' + str(len(self.guest_role.members)) + '**']
-
-        for role in self.games:
-            counts.append(str(len(role.members)))
-
+        for role in games:
+            counts.append(str(role[1]))
         counts = '\n'.join(counts)
 
-        embed = Embed(title='Role call',
-                      color=0x00ff00)
+        embed = Embed(title='Role call', color=0x00ff00)
 
         embed.add_field(name='Role', value=roles)
         embed.add_field(name='Count', value=counts)
         
-        embed.set_author(name='UoM Esports Bot',
-                         icon_url=self.user.avatar_url)
+        embed.set_author(name='UoM Esports Bot', icon_url=self.user.avatar_url)
 
         return embed
 
-    # import game role
-    @command(description='Import game role.', usage='<role>', admin_only=True, category='Games')
-    async def importgame(self, *args, **kwargs):
+    # link game role
+    @command(description='Link game role.', usage='<role>', admin_only=True, category='Games')
+    async def linkgame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
         else:
