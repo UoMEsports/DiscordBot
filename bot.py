@@ -160,19 +160,10 @@ class Bot(Client):
         command = command.replace(self.command_prefix, '', 1).lower()
         channel = message.channel
 
-        if channel in [self.bot_channel, self.admin_channel] and not message.author.bot:
-            if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
-                return await self.commands[command]['cmd'](*args, member=member, channel=channel, roles=message.role_mentions)
-            else:
-                return await channel.send(embed=self.response_embed('Command "{0}{1}" not found. Use "{0}help" to get the list of commands.'.format(self.command_prefix, command), False))
+        if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
+            return await self.commands[command]['cmd'](*args, member=member, channel=channel, roles=message.role_mentions)
         else:
-            if channel in self.guild.channels:
-                await message.delete()
-                
-            if command in self.commands and self.commands[command]['admin_only']:
-                return await self.admin_channel.send(member.mention, embed=self.response_embed('Use admin-only commands here.', False))
-            else:
-                return await self.bot_channel.send(member.mention, embed=self.response_embed('Use commands here.', False))
+            return await channel.send(embed=self.response_embed('Command "{0}{1}" not found. Use "{0}help" to get the list of commands.'.format(self.command_prefix, command), False))
 
     # WRAPPERS
 
@@ -422,7 +413,7 @@ class Bot(Client):
     @event()
     async def on_message(self, message):
         # process responses if message isn't from user:
-        if message.author != self.user:
+        if message.author != self.user and message.channel in [self.bot_channel, self.admin_channel] and not message.author.bot:
             # get the message content in a managable format
             content = message.content.strip()
 
