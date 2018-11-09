@@ -615,26 +615,6 @@ class Bot(Client):
                     # role doesn't exist
                     raise CommandError('"{}" role doesn\'t exist.'.format(role.name))
 
-    # ROLES
-
-    # make yourself a member
-    @command(description='Give yourself the member role.', category='Roles')
-    async def member(self, *args, **kwargs):
-        if self.member_role in kwargs['member'].roles:
-            raise CommandError('You already have the member role.')
-        else:
-            await edit_roles(kwargs['member'], add=[self.member_role], remove=[self.guest_role])
-            return 'Adding member role.'
-
-    # make yourself a guest
-    @command(description='Give yourself the guest role.', category='Roles')
-    async def guest(self, *args, **kwargs):
-        if self.guest_role in kwargs['member'].roles:
-            raise CommandError('You already have the guest role.')
-        else:
-            await edit_roles(kwargs['member'], add=[self.guest_role], remove=[self.member_role])
-            return 'Adding guest role.'
-
     # DISCIPLINE
 
     # strike a user
