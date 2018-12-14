@@ -194,7 +194,7 @@ class Bot(Client):
         return wrapper
 
     # command wrapper
-    def command(description, usage='', admin_only=False, category='General', no_help=False):
+    def command(description, usage='', admin_only=False, category='General'):
         def wrapper(func):
             func.bot_command = True
             func.description = description
@@ -370,7 +370,7 @@ class Bot(Client):
         self.commands = {}
         for att in dir(self):
             attr = getattr(self, att, None)
-            if hasattr(attr, 'bot_command') and not attr.no_help:
+            if hasattr(attr, 'bot_command'):
                 self.commands[att] = {'cmd': attr, 'admin_only': attr.admin_only, 'embed': self.cmd_embed(attr)}
 
         # maintain the bots presence
@@ -545,7 +545,7 @@ class Bot(Client):
                 raise CommandError('Command "{}{}" not found.'.format(self.command_prefix, command))
     
     # restart the bot
-    @command(description='Restart the bot.', admin_only=True, no_help=True)
+    @command(description='Restart the bot.', admin_only=True)
     async def restart(self, *args, **kwargs):
         await kwargs['channel'].send(embed=self.response_embed('Restarting.'))
         log('Restarting the bot')
@@ -553,11 +553,11 @@ class Bot(Client):
         await self.logout()
 
     # test_stream
-    @command(description='Generate test stream announcement', admin_only=True, no_help=True)
+    @command(description='Generate test stream announcement', admin_only=True)
     async def teststream(self, *args, **kwargs):
         # check if the stream is live
         async with ClientSession() as session:
-            async with session.get('https://api.twitch.tv/kraken/streams/{}?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o'.format('failarmy')) as resp:
+            async with session.get('https://api.twitch.tv/kraken/streams/failarmy?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o') as resp:
                 info = await resp.json(content_type='application/json')
 
         await self.stream_channel.send(embed=self.stream_embed(info['stream']))
@@ -768,7 +768,7 @@ class Bot(Client):
         return 'DM\'d.'
 
     # view the strikes file
-    @command(description='See the strikes file.', admin_only=True, no_help=True)
+    @command(description='See the strikes file.', admin_only=True)
     async def strikesfile(self, *args, **kwargs):
         await kwargs['member'].send(embed=self.response_embed('The strikes file.'),
                                     file=File(fp='strikes.csv'))
