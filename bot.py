@@ -331,14 +331,13 @@ class Bot(Client):
         e.add_field(name="Now Playing", value=stream['channel']['game'], inline=False)
         e.add_field(name="Stream Title", value=stream['channel']['status'], inline=False)
 
-        e.set_thumbnail(stream['channel']['logo'])
-        e.set_image(stream['preview']['large'])
+        e.set_thumbnail(url=stream['channel']['logo'])
+        e.set_image(url=stream['preview']['large'])
 
         e.add_field(name="Followers", value=stream['channel']['followers'], inline=True)
         e.add_field(name="Total Views", value=stream['channel']['views'], inline=True)
         
         return e
-        
         
     # EVENTS
         
@@ -569,9 +568,7 @@ class Bot(Client):
             async with session.get('https://api.twitch.tv/kraken/streams/failarmy?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o') as resp:
                 info = await resp.json(content_type='application/json')
 
-        await self.stream_channel.send(embed=self.stream_embed(info['stream']))
-
-        return ':thumbsup:'
+        return self.stream_embed(info['stream'])
 
     # GAMES
 
