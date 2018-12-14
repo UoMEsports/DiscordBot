@@ -37,6 +37,7 @@ def write_strikes(strikes):
 
 # UTILITY
 
+# log to file and console
 def log(message):
     ts = datetime.now().strftime('%Y-%m-%d %H:%M') 
     print('[{0}]: {1}'.format(ts, message))
@@ -324,8 +325,6 @@ class Bot(Client):
     def stream_embed(self, stream):
         e = Embed(color=0x5D3981, title=stream['channel']['url'])
         
-        log(stream)
-
         e.set_author(name='{} is now streaming!'.format(stream['channel']['display_name']), url=stream['channel']['url'], icon_url=self.user.avatar_url)
 
         e.add_field(name="Now Playing", value=stream['channel']['game'], inline=False)
