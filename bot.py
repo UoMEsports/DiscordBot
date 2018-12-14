@@ -322,11 +322,10 @@ class Bot(Client):
         return embed
 
     def stream_embed(self, stream):
-        e = Embed(color=0x5D3981)
+        e = Embed(color=0x5D3981, title=stream['channel']['url'], description='Help')
 
-        e.set_author('{} is now streaming!'.format(stream['channel']['display_name']), stream['channel']['url'], self.user.avatar_url)
+        e.set_author(name='{} is now streaming!'.format(stream['channel']['display_name']), url=stream['channel']['url'], icon_url=self.user.avatar_url)
 
-        e.title = stream['channel']['url']
         #e.add_field("Now Playing", )
 
         return e
@@ -555,7 +554,7 @@ class Bot(Client):
 
     # test_stream
     @command(description='Generate test stream announcement', admin_only=True)
-    async def test_stream(self, *args, **kwargs):
+    async def teststream(self, *args, **kwargs):
         # check if the stream is live
         async with ClientSession() as session:
             async with session.get('https://api.twitch.tv/kraken/streams/failarmy?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o') as resp:
