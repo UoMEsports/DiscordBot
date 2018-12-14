@@ -322,12 +322,15 @@ class Bot(Client):
         return embed
 
     def stream_embed(self, stream):
-        e = Embed(color=0x5D3981, title=stream['channel']['url'], description='Help')
+        e = Embed(color=0x5D3981, title=stream['channel']['url'], description='Help', thumbnail=stream['channel']['logo'], image=stream['preview']['large'])
 
         e.set_author(name='{} is now streaming!'.format(stream['channel']['display_name']), url=stream['channel']['url'], icon_url=self.user.avatar_url)
 
-        #e.add_field("Now Playing", )
-
+        e.add_field(name="Now Playing", value=stream['channel']['game'], inline=False)
+        e.add_field(name="Stream Title", value=stream['channel']['status'], inline=False)
+        e.add_field(name="Followers", value=stream['channel']['followers'], inline=True)
+        e.add_field(name="Total Views", value=stream['channel']['views'], inline=True)
+        
         return e
         
         
