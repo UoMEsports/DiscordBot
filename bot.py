@@ -321,6 +321,17 @@ class Bot(Client):
 
         return embed
 
+    def stream_embed(self, stream):
+        e = Embed(color=0x5D3981)
+
+        e.set_author('{} is now streaming!'.format(stream['channel']['display_name']), stream['channel']['url'], self.user.avatar_url)
+
+        e.title = stream['channel']['url']
+        #e.add_field("Now Playing", )
+
+        return e
+        
+        
     # EVENTS
         
     # output to terminal if the bot successfully logs in
@@ -341,6 +352,9 @@ class Bot(Client):
         # channels
         self.bot_channel = self.guild.get_channel(int(self.config.get('channels', 'bot')))
         self.admin_channel = self.guild.get_channel(int(self.config.get('channels', 'admin')))
+        self.stream_channel = self.guild.get_channel(int(self.config.get('channels', 'stream')))
+
+        self.streaming = None
 
         # roles
         self.admin_role = find(lambda role: role.id == int(self.config.get('roles', 'admin')), self.guild.roles)
@@ -462,16 +476,25 @@ class Bot(Client):
             kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(stream)
             kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o'.format(stream)
         elif kwargs['state'] == 'run':
-            # check if the stram is live
+            # check if the stream is live
             async with ClientSession() as session:
                 async with session.get(kwargs['API_URL']) as resp:
                     info = await resp.json(content_type='application/json')
 
             if info['stream'] == None:
                 # nothing is streaming - use default presence
+
+                self.streaming = False
+
                 await self.change_presence(activity=Game(kwargs['presence']))
             else:
                 # stream is live - use streaming presence
+
+                if self.streaming is not None and self.streaming != False:
+                    await self.stream_channel.send(embed=self.stream_embed(info['stream']))
+
+                self.streaming = True
+
                 await self.change_presence(activity=Streaming(name=info['stream']['channel']['status'], details=info['stream']['channel']['game'], url=kwargs['stream_URL']))
 
         return kwargs
@@ -529,6 +552,16 @@ class Bot(Client):
         log('Restarting the bot')
         log('------')
         await self.logout()
+
+    # test_stream
+    @command(description='Generate test stream announcement', admin_only=True)
+    async def test_stream(self, *args, **kwargs):
+        # check if the stream is live
+        async with ClientSession() as session:
+            async with session.get('https://api.twitch.tv/kraken/streams/failarmy?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o') as resp:
+                info = await resp.json(content_type='application/json')
+
+        await self.stream_channel.send(embed=self.stream_embed(info['stream']))
 
     # GAMES
 
