@@ -496,7 +496,7 @@ class Bot(Client):
             else:
                 # stream is live - use streaming presence
 
-                if self.streaming is not None and self.streaming != False:
+                if self.streaming is not None and self.streaming == False:
                     await self.stream_channel.send(embed=self.stream_embed(info['stream']))
 
                 self.streaming = True
