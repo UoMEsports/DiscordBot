@@ -762,7 +762,7 @@ class Bot(Client):
                 raise CommandError('Cannot find striked user "{}". Check the strikes file'.format(target_user.name))
 
     # view your own strikes
-    @command(description='See current active strike(s).')
+    @command(description='See current active strike(s).', admin_only=True)
     async def strikes(self, *args, **kwargs):
         strikes = await self.read_strikes()
 
