@@ -648,10 +648,10 @@ class Bot(Client):
     # DISCIPLINE
 
     # strike a user
-    @command(description='Strike a user with a given reason.', usage='<user> <reason>', admin_only=True)
+    @command(description='Strike a user with a given reason.', usage='<user_ping> <reason>', admin_only=True)
     async def strike(self, *args, **kwargs):
         if len(args) <= 1 or (not kwargs['mentions']):
-            raise UsageError('Correct usage is: "!strike @user_ping Reason for ban"')
+            raise UsageError('"')
         elif len(kwargs['mentions']) > 1:
             raise UsageError('Ping a single user.')
         else:
@@ -762,21 +762,22 @@ class Bot(Client):
                 raise CommandError('Cannot find striked user "{}". Check the strikes file'.format(target_user.name))
 
     # view your own strikes
-    @command(description='See your current strike(s).')
+    @command(description='See current active strike(s).')
     async def strikes(self, *args, **kwargs):
         strikes = await self.read_strikes()
-        sid = str(kwargs['member'].id)
-        if sid in strikes:
-            responses = ['Your current strikes are for:']
-            for i in range(3):
-                reason = strikes[sid][i+1]
-                if reason != '':
-                    responses.append('{}. {}'.format(i+1, reason))
-            await kwargs['member'].send(embed=self.response_embed('\n'.join(responses)))
-        else:
-            await kwargs['member'].send(embed=self.response_embed('You currently have no strikes. Good job!'))
 
-        return 'DM\'d.'
+        users = '\n'.join([strike[1] for strike in strikes])
+        reasons = '\n'.join([strike[2] for strike in strikes])
+
+        embed = Embed(title='Strikes list', color=0x00ff00)
+
+        embed.add_field(name='User', value=users)
+        embed.add_field(name='Reason', value=reasons)
+        
+        embed.set_author(name='UoM Esports Bot', icon_url=self.user.avatar_url)
+
+        return embed
+        
 
     # view the strikes file
     @command(description='See the strikes file.', admin_only=True)
