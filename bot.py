@@ -702,7 +702,7 @@ class Bot(Client):
         else:
             target_user = kwargs['mentions'][0]
 
-            sid = target_user.id
+            sid = str(target_user.id)
             strikes = await self.read_strikes()
             banned = target_user in [entry.user for entry in await self.guild.bans()]
 
