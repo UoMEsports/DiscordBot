@@ -473,14 +473,14 @@ class Bot(Client):
     async def maintain_presence(self, **kwargs):
         if kwargs['state'] == 'setup':
             # read in the stream
-            stream = self.config.get('general', 'stream')
+            twitch_channel = self.config.get('general', 'twitch_channel')
 
             # read in the default presence
             kwargs['presence'] = self.rcpfx(self.config.get('general', 'presence'))
             
             # the URLs
-            kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(stream)
-            kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o'.format(stream)
+            kwargs['stream_URL'] = 'https://twitch.tv/{}'.format(twitch_channel)
+            kwargs['API_URL'] = 'https://api.twitch.tv/kraken/streams/{}?client_id=6r0rm3qhbmjjq4z6vz4hez56tc9m4o'.format(twitch_channel)
         elif kwargs['state'] == 'run':
             # check if the stream is live
             async with ClientSession() as session:
@@ -550,7 +550,7 @@ class Bot(Client):
                 return self.commands[command]['embed']
             else:
                 raise CommandError('Command "{}{}" not found.'.format(self.command_prefix, command))
-    
+
     # restart the bot
     @command(description='Restart the bot.', admin_only=True)
     async def restart(self, *args, **kwargs):
