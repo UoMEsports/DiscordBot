@@ -770,8 +770,8 @@ class Bot(Client):
         reasons = ''
 
         for sid in strikes:
-            users += '\n'.join(strikes[sid][0])
-            reasons += '\n'.join(strikes[sid][1])
+            users += strikes[sid][0] + '\n'
+            reasons += strikes[sid][1] + '\n'
 
         embed = Embed(title='Strikes list', color=0x00ff00)
 
