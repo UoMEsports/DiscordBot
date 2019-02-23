@@ -766,17 +766,14 @@ class Bot(Client):
     async def strikes(self, *args, **kwargs):
         strikes = await self.read_strikes()
 
-        users = ''
-        reasons = ''
+        strike_string = ''
 
         for sid in strikes:
-            users += strikes[sid][0] + '\n'
-            reasons += strikes[sid][1] + '\n'
+            strike_string += '**' + strikes[sid][0] + '**: ' + strikes[sid][1] + '\n'
 
-        embed = Embed(title='Strikes list', color=0x00ff00)
+        embed = Embed(color=0x00ff00)
 
-        embed.add_field(name='User', value=users)
-        embed.add_field(name='Reason', value=reasons)
+        embed.add_field(name='Strikes', value=strike_string)
         
         embed.set_author(name='UoM Esports Bot', icon_url=self.user.avatar_url)
 
