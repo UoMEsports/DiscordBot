@@ -162,7 +162,7 @@ class Bot(Client):
         channel = message.channel
 
         if command in self.commands and (channel == self.admin_channel or not self.commands[command]['admin_only']):
-            return await self.commands[command]['cmd'](*args, member=member, channel=channel, roles=message.role_mentions)
+            return await self.commands[command]['cmd'](*args, member=member, channel=channel, roles=message.role_mentions, mentions=message.mentions)
         else:
             return await channel.send(embed=self.response_embed('Command "{0}{1}" not found. Use "{0}help" to get the list of commands.'.format(self.command_prefix, command), False))
 
@@ -612,7 +612,7 @@ class Bot(Client):
         return embed
 
     # link game role
-    @command(description='Link game role.', usage='<role>', admin_only=True, category='Games')
+    @command(description='Link game role.', usage='<role ping>', admin_only=True, category='Games')
     async def linkgame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
@@ -629,7 +629,7 @@ class Bot(Client):
                     return 'Imported "{}" role.'.format(role.name)
 
     # unlink a game role
-    @command(description='Unlink a game role.', usage='<role>', admin_only=True, category='Games')
+    @command(description='Unlink a game role.', usage='<role ping>', admin_only=True, category='Games')
     async def unlinkgame(self, *args, **kwargs):
         if len(args) == 0:
             raise UsageError
@@ -650,46 +650,48 @@ class Bot(Client):
     # strike a user
     @command(description='Strike a user with a given reason.', usage='<user> <reason>', admin_only=True)
     async def strike(self, *args, **kwargs):
-        if len(args) <= 1:
-            raise UsageError('Specify a user and a reason.')
+        if len(args) <= 1 or (not kwargs['mentions']):
+            raise UsageError('Correct usage is: "!strike @user_ping Reason for ban"')
+        elif len(kwargs['mentions']) > 1:
+            raise UsageError('Ping a single user.')
         else:
-            name = args[0]
+            target = kwargs['mentions'][0]
+            name = target.name
             reason = ' '.join(args[1:])
             embed = None
 
-            target = find(lambda member: str(member) == name, self.guild.members)
-            if target:
-                sid = str(target.id)
-                strikes = await self.read_strikes()
-                if sid in strikes:
-                    if strikes[sid][2] == '':
-                        # check if you want to give a 7-day ban
-                        if await self.confirm(kwargs['member'], kwargs['channel'], 'Give {} a 7-day ban?'.format(name)):
-                            strikes[sid][2] = reason
-                            # unban_date = (datetime.now() + timedelta(days=7.)).strftime('%Y-%m-%d %H:%M')
-                            unban_date = (datetime.now() + timedelta(minutes=1.)).strftime('%Y-%m-%d %H:%M')
-                            strikes[sid][4] = unban_date
-                            await target.send(embed=self.response_embed('You have been given a 7-day ban (second strike) for "{}". You will be unbanned at {}.'.format(reason, unban_date), False))
-                            response = '{} has been given a 7-day ban (second strike) by {} for "{}". They will be unbanned at {}.'.format(name, kwargs['member'], reason, unban_date)
-                            await self.guild.ban(target, reason=' '.join(['{}. {}'.format(i+1, strikes[sid][i+1]) for i in range(2)]+[unban_date]))
-                    else:
-                        # check if you want to give a permanent ban
-                        if await self.confirm(kwargs['member'], kwargs['channel'], 'Give {} a permanent ban?'.format(name)):
-                            strikes[sid][3] = reason
-                            strikes[sid][4] = 'never'
-                            await target.send(embed=self.response_embed('You have been given a permanent ban (third strike) for "{}".'.format(reason), False))
-                            response = '{} has been given a permanent ban (third strike) by {} for "{}".'.format(name, kwargs['member'], reason)
-                            await self.guild.ban(target, reason=' '.join(['{}. {}'.format(i+1, strikes[sid][i+1]) for i in range(3)]+['Permanent ban']))
+            if self.guild.get_member(target.id):
+                raise CommandError('Cannot find member "{}" in this server. '.format(name))
+
+            sid = str(target.id)
+            strikes = await self.read_strikes()
+            if sid in strikes:
+                if strikes[sid][2] == '':
+                    # check if you want to give a 7-day ban
+                    if await self.confirm(kwargs['member'], kwargs['channel'], 'Give {} a 7-day ban?'.format(name)):
+                        strikes[sid][2] = reason
+                        # unban_date = (datetime.now() + timedelta(days=7.)).strftime('%Y-%m-%d %H:%M')
+                        unban_date = (datetime.now() + timedelta(minutes=1.)).strftime('%Y-%m-%d %H:%M')
+                        strikes[sid][4] = unban_date
+                        await target.send(embed=self.response_embed('You have been given a 7-day ban (second strike) for "{}". You will be unbanned at {}.'.format(reason, unban_date), False))
+                        response = '{} has been given a 7-day ban (second strike) by {} for "{}". They will be unbanned at {}.'.format(name, kwargs['member'], reason, unban_date)
+                        await self.guild.ban(target, reason=' '.join(['{}. {}'.format(i+1, strikes[sid][i+1]) for i in range(2)]+[unban_date]))
                 else:
-                    strikes[sid] = [target, reason, '', '', '']
-                    await edit_roles(target, [self.first_strike_role], [self.first_strike_role, self.second_strike_role])
-                    await target.send(embed=self.response_embed('You have been given a first strike for "{}". One more strike will result in a 7-day ban. Please follow the rules in future.'.format(reason), False))
-                    response = '{} has been given a first strike by {} for "{}".'.format(name, kwargs['member'], reason)
-                    
-                write_strikes(strikes)
-                return response
+                    # check if you want to give a permanent ban
+                    if await self.confirm(kwargs['member'], kwargs['channel'], 'Give {} a permanent ban?'.format(name)):
+                        strikes[sid][3] = reason
+                        strikes[sid][4] = 'never'
+                        await target.send(embed=self.response_embed('You have been given a permanent ban (third strike) for "{}".'.format(reason), False))
+                        response = '{} has been given a permanent ban (third strike) by {} for "{}".'.format(name, kwargs['member'], reason)
+                        await self.guild.ban(target, reason=' '.join(['{}. {}'.format(i+1, strikes[sid][i+1]) for i in range(3)]+['Permanent ban']))
             else:
-                raise CommandError('Cannot find member {}. Did you include their tag?'.format(name))
+                strikes[sid] = [target, reason, '', '', '']
+                await edit_roles(target, [self.first_strike_role], [self.first_strike_role, self.second_strike_role])
+                await target.send(embed=self.response_embed('You have been given a first strike for "{}". One more strike will result in a 7-day ban. Please follow the rules in future.'.format(reason), False))
+                response = '{} has been given a first strike by {} for "{}".'.format(name, kwargs['member'], reason)
+                
+            write_strikes(strikes)
+            return response 
 
     # de-strike a user
     @command(description='De-strike a user with their user ID found using the strikesfile command.', usage='<user-ID>', admin_only=True)
