@@ -660,7 +660,7 @@ class Bot(Client):
             reason = ' '.join(args[1:])
             embed = None
 
-            if self.guild.get_member(target.id):
+            if not self.guild.get_member(target.id):
                 raise CommandError('Cannot find member "{}" in this server. '.format(name))
 
             sid = str(target.id)
