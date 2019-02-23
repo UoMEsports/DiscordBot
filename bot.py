@@ -658,7 +658,6 @@ class Bot(Client):
             target = kwargs['mentions'][0]
             name = target.name
             reason = ' '.join(args[1:])
-            embed = None
 
             if not self.guild.get_member(target.id):
                 raise CommandError('Cannot find member "{}" in this server. '.format(name))
@@ -696,13 +695,18 @@ class Bot(Client):
     # de-strike a user
     @command(description='De-strike a user with their user ID found using the strikesfile command.', usage='<user-ID>', admin_only=True)
     async def destrike(self, *args, **kwargs):
-        if len(args) == 1:
-            sid = args[0]
+        if not kwargs['mentions']:
+            raise UsageError('Ping the user you wish to destrike')
+        elif len(kwargs['mentions']) > 1:
+            raise UsageError('Ping a single user.')
+        else:
+            target_user = kwargs['mentions'][0]
+
+            sid = target_user.id
             strikes = await self.read_strikes()
-            target_user = await self.get_user_info(int(sid))
             banned = target_user in [entry.user for entry in await self.guild.bans()]
 
-            if sid in strikes and target_user:
+            if sid in strikes:
                 target_member = self.guild.get_member(int(sid))
 
                 if strikes[sid][2] == '':
@@ -755,9 +759,7 @@ class Bot(Client):
                 write_strikes(strikes)
                 return response
             else:
-                raise CommandError('Cannot find user with ID {}.'.format(sid))
-        else:
-            raise UsageError
+                raise CommandError('Cannot find striked user "{}". Check the strikes file'.format(target_user.name))
 
     # view your own strikes
     @command(description='See your current strike(s).')
