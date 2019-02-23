@@ -766,8 +766,12 @@ class Bot(Client):
     async def strikes(self, *args, **kwargs):
         strikes = await self.read_strikes()
 
-        users = '\n'.join([strike[1] for strike in strikes])
-        reasons = '\n'.join([strike[2] for strike in strikes])
+        users = ''
+        reasons = ''
+
+        for sid in strikes:
+            users += '\n'.join(strikes[sid][0])
+            reasons += '\n'.join(strikes[sid][1])
 
         embed = Embed(title='Strikes list', color=0x00ff00)
 
