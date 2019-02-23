@@ -693,7 +693,7 @@ class Bot(Client):
             return response 
 
     # de-strike a user
-    @command(description='De-strike a user with their user ID found using the strikesfile command.', usage='<user-ID>', admin_only=True)
+    @command(description='De-strike a user.', usage='<user_ping>', admin_only=True)
     async def destrike(self, *args, **kwargs):
         if not kwargs['mentions']:
             raise UsageError('Ping the user you wish to destrike')
@@ -761,7 +761,6 @@ class Bot(Client):
             else:
                 raise CommandError('Cannot find striked user "{}". Check the strikes file'.format(target_user.name))
 
-    # view your own strikes
     @command(description='See current active strike(s).', admin_only=True)
     async def strikes(self, *args, **kwargs):
         strikes = await self.read_strikes()
@@ -774,6 +773,23 @@ class Bot(Client):
         embed = Embed(color=0x00ff00)
 
         embed.add_field(name='Strikes', value=strike_string)
+        
+        embed.set_author(name='UoM Esports Bot', icon_url=self.user.avatar_url)
+
+        return embed
+
+    @command(description='Get ids of members with strikes. Useful for `!destrike`', admin_only=True)
+    async def strikeids(self, *args, **kwargs):
+        strikes = await self.read_strikes()
+
+        strike_string = ''
+
+        for sid in strikes:
+            strike_string += '**' + strikes[sid][0] + '**: ' + sid + '\n'
+
+        embed = Embed(color=0x00ff00)
+
+        embed.add_field(name='Strike Ids', value=strike_string)
         
         embed.set_author(name='UoM Esports Bot', icon_url=self.user.avatar_url)
 
